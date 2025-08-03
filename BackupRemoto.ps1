@@ -35,12 +35,10 @@ if (Test-Path $ConfigPath) {
         WinRarPath   = "C:\Program Files\WinRAR\winrar.exe"
         WorkingDir   = "\Programas\Nube"
         TempDir      = "E:\send1"
-        RcloneRemote = "backupremoto"
+        RcloneRemote = "InfoCloud"
         RcloneConfig = ""
         RcloneUploadOnly = $true
         RcloneRetryCount = 3
-        RcloneTransfers = 4
-        RcloneCheckers = 8
         RcloneBandwidth = "0"
         RcloneProgress = $true
         RcloneDeleteOlderThan = 30
@@ -280,98 +278,102 @@ function Invoke-WinRarCompress {
     }
 }
 
-function Backup-Documentos {
-    param([string]$DestinationPath, [int]$Diferencial)
+function Invoke-BackupTask {
+    param(
+        [string]$TaskName,
+        [string]$DestinationPath, 
+        [int]$Diferencial,
+        [string[]]$SourcePaths,
+        [string[]]$ExcludeExtensions,
+        [switch]$ProcessUserDirectories
+    )
     
-    Write-ColoredOutput "`n=== BACKUP DOCUMENTOS ===" "Yellow"
+    Write-ColoredOutput "`n=== BACKUP $($TaskName.ToUpper()) ===" "Yellow"
     
-    $ArchiveName = Join-Path $DestinationPath "Documentos_$script:FechaActual.rar"
+    $ArchiveName = Join-Path $DestinationPath "$TaskName`_$script:FechaActual.rar"
+    $IncludeFiles = @()
     
-    # Usar configuración externa
-    $IncludeFiles = $Config.DocumentosSource
-    $ExcludeExtensions = $Config.DocumentosExclude
+    if ($ProcessUserDirectories) {
+        # Lógica especial para directorios de usuarios
+        $TotalUsers = 0
+        
+        foreach ($UsersPath in $SourcePaths) {
+            Write-ColoredOutput "Procesando fuente: $UsersPath" "Cyan"
+            
+            if (Test-Path $UsersPath) {
+                try {
+                    $UserDirs = Get-ChildItem -Path $UsersPath -Directory -ErrorAction Stop
+                    
+                    foreach ($UserDir in $UserDirs) {
+                        $UserPath = $UserDir.FullName
+                        
+                        # Agregar subdirectorios estándar de usuario
+                        $UserSubDirs = @("Desktop", "Documents", "Downloads")
+                        
+                        foreach ($SubDir in $UserSubDirs) {
+                            $FullPath = Join-Path $UserPath $SubDir
+                            if (Test-Path $FullPath) {
+                                $IncludeFiles += "$FullPath\*"
+                                Write-Log "Agregado: $FullPath" "INFO"
+                            }
+                        }
+                    }
+                    
+                    $TotalUsers += $UserDirs.Count
+                    Write-ColoredOutput "  [OK] Usuarios encontrados: $($UserDirs.Count)" "Green"
+                }
+                catch {
+                    Write-ColoredOutput "  [ERROR] Error accediendo a $UsersPath`: $($_.Exception.Message)" "Red"
+                }
+            } else {
+                Write-ColoredOutput "  [WARN] Fuente no encontrada: $UsersPath" "Yellow"
+            }
+        }
+        
+        # Si no se encontraron usuarios en ninguna fuente, usar ubicación por defecto
+        if ($IncludeFiles.Count -eq 0) {
+            Write-ColoredOutput "[WARN] No se encontraron usuarios en las fuentes configuradas" "Yellow"
+            Write-ColoredOutput "  Usando ubicación por defecto: C:\Users\" "Yellow"
+            
+            $IncludeFiles += "C:\Users\*\Desktop\*"
+            $IncludeFiles += "C:\Users\*\Documents\*"
+            $IncludeFiles += "C:\Users\*\Downloads\*"
+        }
+        
+        Write-ColoredOutput "Total de usuarios procesados: $TotalUsers" "Cyan"
+        Write-ColoredOutput "Total de rutas incluidas: $($IncludeFiles.Count)" "Cyan"
+    } else {
+        # Lógica estándar para archivos/directorios normales
+        $IncludeFiles = $SourcePaths
+    }
     
     $Result = Invoke-WinRarCompress -ArchiveName $ArchiveName -IncludeFiles $IncludeFiles -ExcludeExtensions $ExcludeExtensions -Diferencial $Diferencial
     
     if ($Result -eq 0) {
-        Write-Log "Backup de documentos completado exitosamente: $ArchiveName" "SUCCESS"
+        Write-Log "Backup de $TaskName completado exitosamente: $ArchiveName" "SUCCESS"
     } else {
-        Write-Log "Error en backup de documentos: $ArchiveName" "ERROR"
+        Write-Log "Error en backup de $TaskName`: $ArchiveName" "ERROR"
     }
     
     return $Result
 }
 
+function Backup-Documentos {
+    param([string]$DestinationPath, [int]$Diferencial)
+    
+    return Invoke-BackupTask -TaskName "Documentos" -DestinationPath $DestinationPath -Diferencial $Diferencial -SourcePaths $Config.DocumentosSource -ExcludeExtensions $Config.DocumentosExclude
+}
+
 function Backup-Usuarios {
     param([string]$DestinationPath, [int]$Diferencial)
     
-    Write-ColoredOutput "`n=== BACKUP USUARIOS ===" "Yellow"
+    return Invoke-BackupTask -TaskName "Usuarios" -DestinationPath $DestinationPath -Diferencial $Diferencial -SourcePaths $Config.UsuariosSource -ExcludeExtensions $Config.UsuariosExclude -ProcessUserDirectories
+}
+
+function Backup-Programas {
+    param([string]$DestinationPath, [int]$Diferencial)
     
-    $ArchiveName = Join-Path $DestinationPath "Usuarios_$script:FechaActual.rar"
-    
-    # Obtener directorios de usuarios desde configuración (múltiples fuentes)
-    $UsuariosSources = $Config.UsuariosSource
-    $IncludeFiles = @()
-    $TotalUsers = 0
-    
-    # Procesar cada fuente de usuarios
-    foreach ($UsersPath in $UsuariosSources) {
-        Write-ColoredOutput "Procesando fuente: $UsersPath" "Cyan"
-        
-        if (Test-Path $UsersPath) {
-            try {
-                $UserDirs = Get-ChildItem -Path $UsersPath -Directory -ErrorAction Stop
-                
-                foreach ($UserDir in $UserDirs) {
-                    $UserPath = $UserDir.FullName
-                    
-                    # Agregar subdirectorios estándar de usuario
-                    $UserSubDirs = @("Desktop", "Documents", "Downloads")
-                    
-                    foreach ($SubDir in $UserSubDirs) {
-                        $FullPath = Join-Path $UserPath $SubDir
-                        if (Test-Path $FullPath) {
-                            $IncludeFiles += "$FullPath\*"
-                            Write-Log "Agregado: $FullPath" "INFO"
-                        }
-                    }
-                }
-                
-                $TotalUsers += $UserDirs.Count
-                Write-ColoredOutput "  [OK] Usuarios encontrados: $($UserDirs.Count)" "Green"
-            }
-            catch {
-                Write-ColoredOutput "  [ERROR] Error accediendo a $UsersPath`: $($_.Exception.Message)" "Red"
-            }
-        } else {
-            Write-ColoredOutput "  [WARN] Fuente no encontrada: $UsersPath" "Yellow"
-        }
-    }
-    
-    # Si no se encontraron usuarios en ninguna fuente, usar ubicación por defecto
-    if ($IncludeFiles.Count -eq 0) {
-        Write-ColoredOutput "[WARN] No se encontraron usuarios en las fuentes configuradas" "Yellow"
-        Write-ColoredOutput "  Usando ubicación por defecto: C:\Users\" "Yellow"
-        
-        $IncludeFiles += "C:\Users\*\Desktop\*"
-        $IncludeFiles += "C:\Users\*\Documents\*"
-        $IncludeFiles += "C:\Users\*\Downloads\*"
-    }
-    
-    Write-ColoredOutput "Total de usuarios procesados: $TotalUsers" "Cyan"
-    Write-ColoredOutput "Total de rutas incluidas: $($IncludeFiles.Count)" "Cyan"
-    
-    $ExcludeExtensions = $Config.UsuariosExclude
-    
-    $Result = Invoke-WinRarCompress -ArchiveName $ArchiveName -IncludeFiles $IncludeFiles -ExcludeExtensions $ExcludeExtensions -Diferencial $Diferencial
-    
-    if ($Result -eq 0) {
-        Write-Log "Backup de usuarios completado exitosamente: $ArchiveName" "SUCCESS"
-    } else {
-        Write-Log "Error en backup de usuarios: $ArchiveName" "ERROR"
-    }
-    
-    return $Result
+    return Invoke-BackupTask -TaskName "Programas" -DestinationPath $DestinationPath -Diferencial $Diferencial -SourcePaths $Config.ProgramasSource -ExcludeExtensions $Config.ProgramasExclude
 }
 
 function Sync-ToRclone {
@@ -401,8 +403,6 @@ function Sync-ToRclone {
             "copy",
             $LocalPath,
             "$($Config.RcloneRemote):$($Config.RemotePath)",
-            "--transfers", $Config.RcloneTransfers.ToString(),
-            "--checkers", $Config.RcloneCheckers.ToString(),
             "--retries", $Config.RcloneRetryCount.ToString()
         )
         
@@ -724,6 +724,15 @@ function Main {
             Write-ColoredOutput "Backup Usuarios DESHABILITADO" "Yellow"
             Write-Log "Backup Usuarios deshabilitado en configuración" "INFO"
             $Results["Backup Usuarios"] = "DESHABILITADO"
+        }
+        
+        # Backup Programas (si está habilitado)
+        if ($Config.ProgramasEnabled) {
+            $Results["Backup Programas"] = Backup-Programas -DestinationPath $Config.TempDir -Diferencial $script:TipoDiferencial
+        } else {
+            Write-ColoredOutput "Backup Programas DESHABILITADO" "Yellow"
+            Write-Log "Backup Programas deshabilitado en configuración" "INFO"
+            $Results["Backup Programas"] = "DESHABILITADO"
         }
         
         # Subir archivos con rclone

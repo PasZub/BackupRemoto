@@ -17,8 +17,6 @@
     # Configuración de rclone
     RcloneUploadOnly = $true      # Solo subir archivos, no sincronizar
     RcloneRetryCount = 3          # Número de reintentos en caso de error
-    RcloneTransfers = 4           # Número de transferencias paralelas
-    RcloneCheckers = 8            # Número de verificadores paralelos
     RcloneBandwidth = "0"         # Límite de ancho de banda (0 = sin límite)
     RcloneProgress = $true        # Mostrar progreso de transferencia
     

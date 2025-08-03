@@ -1,0 +1,24 @@
+# Logs de backup
+BackupLogs/
+**/BackupLogs/
+
+# Archivos temporales de backup
+*.rar
+*.zip
+*.7z
+
+# Archivos de configuración de rclone
+rclone.conf
+
+# Archivos de log individuales
+*.log
+
+# Archivos temporales de Windows
+Thumbs.db
+desktop.ini
+
+# Archivos temporales de PowerShell
+*.ps1~
+*.swp
+*.tmp
+
