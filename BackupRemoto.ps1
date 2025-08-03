@@ -47,6 +47,16 @@ if (Test-Path $ConfigPath) {
         LogEnabled   = $true
         LogPath      = "E:\send1\BackupLogs"
         LogRetentionDays = 30
+        # Optimizaciones de rendimiento de rclone
+        RcloneTransfers = 8
+        RcloneCheckers = 16
+        RcloneBufferSize = "32M"
+        RcloneMultiThreadCutoff = "250M"
+        RcloneMultiThreadStreams = 4
+        RcloneTimeout = "5m"
+        RcloneContimeout = "60s"
+        RcloneLowLevelRetries = 10
+        RcloneUseServerModtime = $true
     }
 }
 
@@ -137,7 +147,7 @@ function Clear-OldLogs {
         Write-Warning "Error limpiando logs antiguos: $($_.Exception.Message)"
     }
 }
-B
+
 function Initialize-Environment {
     Write-ColoredOutput "Inicializando entorno de backup..." "Cyan"
     
@@ -402,9 +412,56 @@ function Sync-ToRclone {
         $RcloneArgs = @(
             "copy",
             $LocalPath,
-            "$($Config.RcloneRemote):$($Config.RemotePath)",
-            "--retries", $Config.RcloneRetryCount.ToString()
+            "$($Config.RcloneRemote):$($Config.RemotePath)"
         )
+        
+        # Optimizaciones de rendimiento
+        if ($Config.RcloneTransfers) {
+            $RcloneArgs += "--transfers=$($Config.RcloneTransfers)"
+        }
+        
+        if ($Config.RcloneCheckers) {
+            $RcloneArgs += "--checkers=$($Config.RcloneCheckers)"
+        }
+        
+        if ($Config.RcloneBufferSize) {
+            $RcloneArgs += "--buffer-size=$($Config.RcloneBufferSize)"
+        }
+        
+        if ($Config.RcloneMultiThreadCutoff) {
+            $RcloneArgs += "--multi-thread-cutoff=$($Config.RcloneMultiThreadCutoff)"
+        }
+        
+        if ($Config.RcloneMultiThreadStreams) {
+            $RcloneArgs += "--multi-thread-streams=$($Config.RcloneMultiThreadStreams)"
+        }
+        
+        if ($Config.RcloneTimeout) {
+            $RcloneArgs += "--timeout=$($Config.RcloneTimeout)"
+        }
+        
+        if ($Config.RcloneContimeout) {
+            $RcloneArgs += "--contimeout=$($Config.RcloneContimeout)"
+        }
+        
+        if ($Config.RcloneLowLevelRetries) {
+            $RcloneArgs += "--low-level-retries=$($Config.RcloneLowLevelRetries)"
+        }
+        
+        if ($Config.RcloneUseServerModtime) {
+            $RcloneArgs += "--use-server-modtime"
+        }
+        
+        # Optimizaciones adicionales de velocidad
+        $RcloneArgs += "--fast-list"           # Lista archivos en paralelo
+        $RcloneArgs += "--ignore-checksum"     # No verificar checksum (más rápido)
+        $RcloneArgs += "--no-traverse"         # No recorrer directorio destino
+        $RcloneArgs += "--disable=move"        # Deshabilitar operaciones move
+        
+        # Agregar reintentos
+        if ($Config.RcloneRetryCount) {
+            $RcloneArgs += "--retries=$($Config.RcloneRetryCount)"
+        }
         
         # Agregar progreso si está habilitado
         if ($Config.RcloneProgress) {
@@ -413,18 +470,19 @@ function Sync-ToRclone {
         
         # Agregar límite de ancho de banda si está configurado
         if ($Config.RcloneBandwidth -ne "0") {
-            $RcloneArgs += "--bwlimit"
-            $RcloneArgs += $Config.RcloneBandwidth
+            $RcloneArgs += "--bwlimit=$($Config.RcloneBandwidth)"
         }
         
         # Agregar configuración personalizada si existe
         if ($Config.RcloneConfig -and (Test-Path $Config.RcloneConfig)) {
-            $RcloneArgs += "--config"
-            $RcloneArgs += $Config.RcloneConfig
+            $RcloneArgs += "--config=$($Config.RcloneConfig)"
         }
         
         Write-ColoredOutput "Subiendo archivos a: $($Config.RcloneRemote):$($Config.RemotePath)" "Cyan"
+        Write-ColoredOutput "Optimizaciones: $($Config.RcloneTransfers) transferencias, $($Config.RcloneCheckers) verificadores" "Gray"
+        Write-ColoredOutput "Buffer: $($Config.RcloneBufferSize), Multi-thread: >$($Config.RcloneMultiThreadCutoff)" "Gray"
         Write-Log "Directorio local: $LocalPath" "INFO"
+        Write-Log "Argumentos rclone: $($RcloneArgs -join ' ')" "INFO"
         
         $Process = Start-Process -FilePath $Config.RclonePath -ArgumentList $RcloneArgs -Wait -PassThru -NoNewWindow
         
@@ -459,13 +517,33 @@ function Clear-OldFilesFromServer {
             "--min-age", "$($Config.RcloneDeleteOlderThan)d"
         )
         
+        # Agregar optimizaciones para operaciones de limpieza
+        if ($Config.RcloneCheckers) {
+            $DeleteArgs += "--checkers=$($Config.RcloneCheckers)"
+        }
+        
+        if ($Config.RcloneTimeout) {
+            $DeleteArgs += "--timeout=$($Config.RcloneTimeout)"
+        }
+        
+        if ($Config.RcloneContimeout) {
+            $DeleteArgs += "--contimeout=$($Config.RcloneContimeout)"
+        }
+        
+        if ($Config.RcloneLowLevelRetries) {
+            $DeleteArgs += "--low-level-retries=$($Config.RcloneLowLevelRetries)"
+        }
+        
+        # Optimizaciones adicionales para listado
+        $DeleteArgs += "--fast-list"           # Lista archivos en paralelo
+        
         # Agregar configuración personalizada si existe
         if ($Config.RcloneConfig -and (Test-Path $Config.RcloneConfig)) {
-            $DeleteArgs += "--config"
-            $DeleteArgs += $Config.RcloneConfig
+            $DeleteArgs += "--config=$($Config.RcloneConfig)"
         }
         
         Write-ColoredOutput "Eliminando archivos mayores a $($Config.RcloneDeleteOlderThan) días del servidor" "Cyan"
+        Write-Log "Argumentos rclone delete: $($DeleteArgs -join ' ')" "INFO"
         
         $Process = Start-Process -FilePath $Config.RclonePath -ArgumentList $DeleteArgs -Wait -PassThru -NoNewWindow
         

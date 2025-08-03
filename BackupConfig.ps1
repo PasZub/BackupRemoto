@@ -7,7 +7,8 @@
     WinRarPath   = "C:\Program Files\WinRAR\winrar.exe"
     
     # Directorios
-    WorkingDir   = "\Programas\Nube"
+    WorkingDir   = "\Programas\BackupRemoto"
+    Usuario      = "sivack" 
     TempDir      = "D:\send1"
 
     # Configuración de servidor remoto - rclone

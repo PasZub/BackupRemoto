@@ -46,9 +46,6 @@ $TELEGRAM_CHAT_ID = "-1001575024278"
 $ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPath = Join-Path $ScriptPath "BackupConfig.ps1"
 
-# Cargar assemblies necesarios para conversion PDF
-Add-Type -AssemblyName System.Web
-
 # Cargar configuración del backup si existe
 if (Test-Path $ConfigPath) {
     try {
@@ -105,119 +102,6 @@ function Send-TelegramMessage {
     }
     catch {
         Write-Output "[ERROR] Excepción enviando mensaje: $($_.Exception.Message)" "Red"
-        return $false
-    }
-}
-
-function Convert-LogToHtml {
-    param([string]$LogPath, [string]$OutputPath)
-    
-    try {
-        Write-Output "Convirtiendo log a HTML..." "Cyan"
-        
-        # Leer contenido del log
-        $logContent = Get-Content -Path $LogPath -Encoding UTF8
-        $fileName = Split-Path $LogPath -Leaf
-        
-        # Crear HTML optimizado para lectura
-        $htmlContent = @"
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Log del Sistema de Backup</title>
-    <style>
-        body { 
-            font-family: 'Courier New', monospace; 
-            font-size: 11px; 
-            line-height: 1.3;
-            margin: 20px;
-            background-color: #f8f9fa;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .header { 
-            font-size: 18px; 
-            font-weight: bold; 
-            margin-bottom: 20px;
-            text-align: center;
-            color: #2c3e50;
-            border-bottom: 3px solid #3498db;
-            padding-bottom: 15px;
-        }
-        .info { 
-            background-color: #ecf0f1;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px; 
-            font-size: 12px;
-            color: #34495e;
-        }
-        .log-content { 
-            background-color: #2c3e50;
-            color: #ecf0f1;
-            padding: 20px;
-            border-radius: 5px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            line-height: 1.4;
-        }
-        .line { 
-            margin: 2px 0; 
-            padding: 1px 0;
-        }
-        .line:hover {
-            background-color: rgba(52, 152, 219, 0.2);
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">Log del Sistema de Backup</div>
-        <div class="info">
-            <strong>Archivo:</strong> $fileName<br>
-            <strong>Fecha de conversion:</strong> $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')<br>
-            <strong>Total de lineas:</strong> $($logContent.Count)
-        </div>
-        <div class="log-content">
-"@
-        
-        # Agregar contenido del log linea por linea
-        foreach ($line in $logContent) {
-            $escapedLine = [System.Web.HttpUtility]::HtmlEncode($line)
-            $htmlContent += "<div class=`"line`">$escapedLine</div>`n"
-        }
-        
-        $htmlContent += @"
-        </div>
-    </div>
-</body>
-</html>
-"@
-        
-        # Guardar HTML
-        $htmlContent | Out-File -FilePath $OutputPath -Encoding UTF8
-        
-        if (Test-Path $OutputPath) {
-            $htmlSize = (Get-Item $OutputPath).Length
-            Write-Output "[OK] HTML creado: $(Split-Path $OutputPath -Leaf) ($([math]::Round($htmlSize/1KB, 1))KB)" "Green"
-            return $true
-        } else {
-            Write-Output "[ERROR] No se pudo crear el HTML" "Red"
-            return $false
-        }
-    }
-    catch {
-        Write-Output "[ERROR] Error convirtiendo a HTML: $($_.Exception.Message)" "Red"
         return $false
     }
 }
@@ -295,7 +179,7 @@ function Send-TelegramFile {
             # Fallback: usar metodo PowerShell nativo simplificado
             Write-Output "Usando metodo PowerShell nativo..." "Gray"
             
-            # Crear formulario multipart manualmente pero mas simple
+            # Crear formulario multipart manualmente
             $boundary = [System.Guid]::NewGuid().ToString()
             $LF = "`r`n"
             
@@ -381,30 +265,16 @@ if (-not [string]::IsNullOrEmpty($Message)) {
 
 # Enviar archivo de log específico si se especifica
 if (-not [string]::IsNullOrEmpty($LogPath)) {
-    # Intentar convertir a HTML
-    $htmlPath = $LogPath -replace '\.log$', '.html'
-    $fileToSend = $LogPath
-    $caption = "Log del Sistema de Backup`nFecha: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')"
-    
-    if (Convert-LogToHtml -LogPath $LogPath -OutputPath $htmlPath) {
-        if (Test-Path $htmlPath) {
-            $fileToSend = $htmlPath
-            $caption = "Log del Sistema de Backup (HTML)`nFecha: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')"
-            Write-Output "Enviando como HTML..." "Green"
-        } else {
-            Write-Output "Enviando log original..." "Yellow"
+    if (Test-Path $LogPath) {
+        $caption = "Log del Sistema de Backup`nFecha: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')"
+        Write-Output "Enviando log original..." "Cyan"
+        
+        if (-not (Send-TelegramFile -FilePath $LogPath -Caption $caption)) {
+            $Success = $false
         }
     } else {
-        Write-Output "Enviando log original..." "Yellow"
-    }
-    
-    if (-not (Send-TelegramFile -FilePath $fileToSend -Caption $caption)) {
+        Write-Output "[ERROR] Archivo de log no encontrado: $LogPath" "Red"
         $Success = $false
-    }
-    
-    # Limpiar archivos temporales
-    if ($fileToSend -ne $LogPath -and (Test-Path $fileToSend)) {
-        Remove-Item $fileToSend -ErrorAction SilentlyContinue
     }
 }
 
