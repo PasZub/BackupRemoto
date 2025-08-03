@@ -33,7 +33,7 @@ if (Test-Path $ConfigPath) {
     $Config = @{
         RclonePath   = "rclone.exe"
         WinRarPath   = "C:\Program Files\WinRAR\winrar.exe"
-        WorkingDir   = "\Programas\Nube"
+        WorkingDir   = "."
         TempDir      = "E:\send1"
         RcloneRemote = "InfoCloud"
         RcloneConfig = ""

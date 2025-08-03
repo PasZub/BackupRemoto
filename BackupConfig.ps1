@@ -20,6 +20,15 @@
     RcloneRetryCount = 3          # Número de reintentos en caso de error
     RcloneBandwidth = "0"         # Límite de ancho de banda (0 = sin límite)
     RcloneProgress = $true        # Mostrar progreso de transferencia
+    RcloneTransfers = 8
+    RcloneCheckers = 16
+    RcloneBufferSize = "32M"
+    RcloneMultiThreadCutoff = "250M"
+    RcloneMultiThreadStreams = 4
+    RcloneTimeout = "5m"
+    RcloneContimeout = "60s"
+    RcloneLowLevelRetries = 10
+    RcloneUseServerModtime = $true
     
     # Configuración de ruta remota
     RemotePath   = "/buffer/"     # Ruta en el servidor remoto

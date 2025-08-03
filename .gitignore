@@ -1,6 +1,6 @@
 # Logs de backup
-BackupLogs/
-**/BackupLogs/
+/BackupLogs/
+
 
 # Archivos temporales de backup
 *.rar
