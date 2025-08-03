@@ -1,0 +1,27 @@
+﻿[2025-08-03 00:07:21] [INFO] [INICIO] INICIANDO BACKUP REMOTO POWERSHELL
+[2025-08-03 00:07:21] [INFO] Timestamp: 08/03/2025 00:07:21
+[2025-08-03 00:07:21] [INFO] ========== INICIO DE SESIÓN DE BACKUP ==========
+[2025-08-03 00:07:21] [INFO] Script iniciado: 08/03/2025 00:07:21
+[2025-08-03 00:07:21] [INFO] Parámetros: Force=True
+[2025-08-03 00:07:21] [INFO] Inicializando entorno de backup...
+[2025-08-03 00:07:21] [INFO] Fecha: 20250803 | Día: Sunday | Tipo: COMPLETO
+[2025-08-03 00:07:21] [INFO] Iniciando proceso de backup - Tipo: COMPLETO
+[2025-08-03 00:07:21] [INFO] 
+=== BACKUP DOCUMENTOS ===
+[2025-08-03 00:07:21] [INFO] Comprimiendo: D:\send1\Documentos_20250803.rar
+[2025-08-03 00:07:21] [INFO] Verificando ruta: D:\pc_pascual_20250602\user_pascual\Nextcloud\Documentos
+[2025-08-03 00:07:21] [INFO] Archivos encontrados en D:\pc_pascual_20250602\user_pascual\Nextcloud\Documentos: 272
+[2025-08-03 00:07:21] [INFO] Contenido del archivo de inclusión (C:\Users\Pascual\AppData\Local\Temp\incluir_795332181.txt):
+[2025-08-03 00:07:21] [INFO]   Include: D:\pc_pascual_20250602\user_pascual\Nextcloud\Documentos\*
+[2025-08-03 00:07:21] [INFO] Contenido del archivo de exclusión (C:\Users\Pascual\AppData\Local\Temp\excluir_445331581.txt):
+[2025-08-03 00:07:21] [INFO]   Exclude: *.acc
+[2025-08-03 00:07:21] [INFO] Modo completo: todos los archivos
+[2025-08-03 00:07:21] [INFO] Ejecutando: C:\Program Files\WinRAR\winrar.exe A -r -inul -x@C:\Users\Pascual\AppData\Local\Temp\excluir_445331581.txt D:\send1\Documentos_20250803.rar @C:\Users\Pascual\AppData\Local\Temp\incluir_795332181.txt
+[2025-08-03 00:07:24] [INFO] [OK] Compresión exitosa: D:\send1\Documentos_20250803.rar
+[2025-08-03 00:07:24] [SUCCESS] Backup de documentos completado exitosamente: D:\send1\Documentos_20250803.rar
+[2025-08-03 00:07:24] [INFO] Backup Usuarios DESHABILITADO
+[2025-08-03 00:07:24] [INFO] Backup Usuarios deshabilitado en configuración
+[2025-08-03 00:07:24] [INFO] 
+=== SINCRONIZACIÓN RCLONE ===
+[2025-08-03 00:07:24] [INFO] Subiendo archivos a: InfoCloud:/buffer/
+[2025-08-03 00:07:24] [INFO] Directorio local: D:\send1/
