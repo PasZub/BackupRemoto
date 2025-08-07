@@ -43,6 +43,19 @@ $TELEGRAM_CHAT_ID = "-1001575024278"
 # NO MODIFICAR EL CÓDIGO A PARTIR DE AQUÍ
 # ============================================================================
 
+# Configurar TLS 1.2 para evitar errores SSL/TLS con Telegram API
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+    if (-not $Silent) {
+        Write-Verbose "TLS 1.2 habilitado para conexiones HTTPS"
+    }
+}
+catch {
+    if (-not $Silent) {
+        Write-Warning "No se pudo configurar TLS 1.2: $($_.Exception.Message)"
+    }
+}
+
 $ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPath = Join-Path $ScriptPath "BackupConfig.ps1"
 $UserConfigPath = Join-Path $ScriptPath "UserConfig.ps1"
@@ -113,31 +126,70 @@ function Send-TelegramMessage {
         return $false
     }
     
+    # Configurar TLS antes de cada llamada HTTP
     try {
-        $Uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"
-        
-        $Body = @{
-            chat_id = $TELEGRAM_CHAT_ID
-            text = $Text
-            parse_mode = "HTML"
-        }
-        
-        Write-Output "Enviando mensaje a Telegram..." "Cyan"
-        
-        $Response = Invoke-RestMethod -Uri $Uri -Method Post -Body $Body -ContentType "application/x-www-form-urlencoded"
-        
-        if ($Response.ok) {
-            Write-Output "[OK] Mensaje enviado exitosamente" "Green"
-            return $true
-        } else {
-            Write-Output "[ERROR] Error enviando mensaje: $($Response.description)" "Red"
-            return $false
-        }
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     }
     catch {
-        Write-Output "[ERROR] Excepción enviando mensaje: $($_.Exception.Message)" "Red"
-        return $false
+        Write-Output "[WARN] No se pudo configurar TLS: $($_.Exception.Message)" "Yellow"
     }
+    
+    $maxRetries = 3
+    $retryDelay = 2
+    
+    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+        try {
+            $Uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"
+            
+            $Body = @{
+                chat_id = $TELEGRAM_CHAT_ID
+                text = $Text
+                parse_mode = "HTML"
+            }
+            
+            if ($attempt -eq 1) {
+                Write-Output "Enviando mensaje a Telegram..." "Cyan"
+            } else {
+                Write-Output "Reintentando envío de mensaje (intento $attempt)..." "Yellow"
+            }
+            
+            # Usar Invoke-WebRequest en lugar de Invoke-RestMethod para mejor control de errores
+            $Response = Invoke-WebRequest -Uri $Uri -Method Post -Body $Body -ContentType "application/x-www-form-urlencoded" -UseBasicParsing
+            
+            if ($Response.StatusCode -eq 200) {
+                $JsonResponse = $Response.Content | ConvertFrom-Json
+                if ($JsonResponse.ok) {
+                    Write-Output "[OK] Mensaje enviado exitosamente" "Green"
+                    return $true
+                } else {
+                    Write-Output "[ERROR] Error enviando mensaje: $($JsonResponse.description)" "Red"
+                    return $false
+                }
+            } else {
+                Write-Output "[ERROR] Error HTTP: $($Response.StatusCode)" "Red"
+                if ($attempt -lt $maxRetries) {
+                    Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
+                    Start-Sleep -Seconds $retryDelay
+                    continue
+                }
+                return $false
+            }
+        }
+        catch {
+            Write-Output "[ERROR] Excepción enviando mensaje (intento $attempt): $($_.Exception.Message)" "Red"
+            
+            if ($attempt -lt $maxRetries) {
+                Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
+                Start-Sleep -Seconds $retryDelay
+            } else {
+                Write-Output "[ERROR] Error después de $maxRetries intentos" "Red"
+                return $false
+            }
+        }
+    }
+    
+    return $false
 }
 
 function Send-TelegramFile {
@@ -156,6 +208,15 @@ function Send-TelegramFile {
     if (-not (Test-Path $FilePath)) {
         Write-Output "[ERROR] Archivo no encontrado: $FilePath" "Red"
         return $false
+    }
+    
+    # Configurar TLS antes de cada llamada HTTP
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    }
+    catch {
+        Write-Output "[WARN] No se pudo configurar TLS: $($_.Exception.Message)" "Yellow"
     }
     
     try {
@@ -255,21 +316,56 @@ function Send-TelegramFile {
             # Combinar todo
             $bodyBytes = $headerBytes + $fileBytes + $footerBytes
             
-            # Enviar
-            $Uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
-            $headers = @{
-                "Content-Type" = "multipart/form-data; boundary=$boundary"
+            # Enviar con reintentos
+            $maxRetries = 3
+            $retryDelay = 2
+            
+            for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+                try {
+                    if ($attempt -gt 1) {
+                        Write-Output "Reintentando envío de archivo (intento $attempt)..." "Yellow"
+                    }
+                    
+                    $Uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
+                    $headers = @{
+                        "Content-Type" = "multipart/form-data; boundary=$boundary"
+                    }
+                    
+                    $Response = Invoke-WebRequest -Uri $Uri -Method Post -Body $bodyBytes -Headers $headers -UseBasicParsing
+                    
+                    if ($Response.StatusCode -eq 200) {
+                        $JsonResponse = $Response.Content | ConvertFrom-Json
+                        if ($JsonResponse.ok) {
+                            Write-Output "[OK] Archivo enviado exitosamente" "Green"
+                            return $true
+                        } else {
+                            Write-Output "[ERROR] Error enviando archivo: $($JsonResponse.description)" "Red"
+                            return $false
+                        }
+                    } else {
+                        Write-Output "[ERROR] Error HTTP: $($Response.StatusCode)" "Red"
+                        if ($attempt -lt $maxRetries) {
+                            Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
+                            Start-Sleep -Seconds $retryDelay
+                            continue
+                        }
+                        return $false
+                    }
+                }
+                catch {
+                    Write-Output "[ERROR] Excepción enviando archivo (intento $attempt): $($_.Exception.Message)" "Red"
+                    
+                    if ($attempt -lt $maxRetries) {
+                        Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
+                        Start-Sleep -Seconds $retryDelay
+                    } else {
+                        Write-Output "[ERROR] Error después de $maxRetries intentos" "Red"
+                        return $false
+                    }
+                }
             }
             
-            $Response = Invoke-RestMethod -Uri $Uri -Method Post -Body $bodyBytes -Headers $headers
-            
-            if ($Response.ok) {
-                Write-Output "[OK] Archivo enviado exitosamente" "Green"
-                return $true
-            } else {
-                Write-Output "[ERROR] Error enviando archivo: $($Response.description)" "Red"
-                return $false
-            }
+            return $false
         }
     }
     catch {
