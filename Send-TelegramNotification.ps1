@@ -45,18 +45,52 @@ $TELEGRAM_CHAT_ID = "-1001575024278"
 
 $ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPath = Join-Path $ScriptPath "BackupConfig.ps1"
+$UserConfigPath = Join-Path $ScriptPath "UserConfig.ps1"
 
-# Cargar configuración del backup si existe
+# Cargar configuración del sistema
 if (Test-Path $ConfigPath) {
     try {
         $Config = & $ConfigPath
     }
     catch {
-        $Config = $null
+        $Config = @{}
         if (-not $Silent) {
-            Write-Warning "No se pudo cargar la configuración de backup: $($_.Exception.Message)"
+            Write-Warning "No se pudo cargar la configuración del sistema: $($_.Exception.Message)"
         }
     }
+} else {
+    $Config = @{}
+    if (-not $Silent) {
+        Write-Warning "Archivo de configuración del sistema no encontrado: $ConfigPath"
+    }
+}
+
+# Cargar configuración de usuario y combinar
+if (Test-Path $UserConfigPath) {
+    try {
+        $UserConfig = & $UserConfigPath
+        # Combinar configuraciones (UserConfig tiene prioridad)
+        foreach ($key in $UserConfig.Keys) {
+            $Config[$key] = $UserConfig[$key]
+        }
+        if (-not $Silent) {
+            Write-Verbose "Configuración de usuario cargada desde: $UserConfigPath"
+        }
+    }
+    catch {
+        if (-not $Silent) {
+            Write-Warning "No se pudo cargar la configuración de usuario: $($_.Exception.Message)"
+        }
+    }
+} else {
+    if (-not $Silent) {
+        Write-Warning "Archivo de configuración de usuario no encontrado: $UserConfigPath"
+    }
+}
+
+# Asegurar que existe la propiedad Usuario para retrocompatibilidad
+if (-not $Config.ContainsKey('Usuario') -or [string]::IsNullOrEmpty($Config.Usuario)) {
+    $Config['Usuario'] = $env:USERNAME
 }
 
 function Write-Output {
@@ -254,7 +288,27 @@ $Success = $true
 
 # Enviar mensaje personalizado si se especifica
 if (-not [string]::IsNullOrEmpty($Message)) {
-    $FormattedMessage = "<b>Notificacion de Backup $($Config.Usuario)</b>`n`n"
+    # Construir encabezado con información del sistema
+    $systemInfo = ""
+    if ($Config.ContainsKey('Usuario') -and -not [string]::IsNullOrEmpty($Config.Usuario)) {
+        $systemInfo = "Usuario: $($Config.Usuario)"
+    } else {
+        $systemInfo = "Sistema: $env:COMPUTERNAME"
+    }
+    
+    # Agregar información del directorio temporal si está disponible
+    if ($Config.ContainsKey('TempDir') -and -not [string]::IsNullOrEmpty($Config.TempDir)) {
+        $systemInfo += "`nDirectorio: $($Config.TempDir)"
+    }
+    
+    # Agregar información del servidor remoto si está disponible
+    if ($Config.ContainsKey('RcloneRemote') -and -not [string]::IsNullOrEmpty($Config.RcloneRemote)) {
+        $systemInfo += "`nServidor: $($Config.RcloneRemote)"
+    }
+    
+    $FormattedMessage = "<b>NOTIFICACION DE BACKUP</b>`n"
+    $FormattedMessage += "========================================`n"
+    $FormattedMessage += "$systemInfo`n`n"
     $FormattedMessage += $Message
     $FormattedMessage += "`n`nFecha: <i>$(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')</i>"
     
@@ -266,11 +320,125 @@ if (-not [string]::IsNullOrEmpty($Message)) {
 # Enviar archivo de log específico si se especifica
 if (-not [string]::IsNullOrEmpty($LogPath)) {
     if (Test-Path $LogPath) {
-        $caption = "Log del Sistema de Backup`nFecha: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')"
-        Write-Output "Enviando log original..." "Cyan"
+        # Crear caption más informativo
+        $logFileName = Split-Path $LogPath -Leaf
+        $systemName = if ($Config.ContainsKey('Usuario') -and -not [string]::IsNullOrEmpty($Config.Usuario)) { 
+            $Config.Usuario 
+        } else { 
+            $env:COMPUTERNAME 
+        }
         
-        if (-not (Send-TelegramFile -FilePath $LogPath -Caption $caption)) {
-            $Success = $false
+        $caption = "LOG DEL SISTEMA DE BACKUP`n"
+        $caption += "========================================`n"
+        $caption += "Sistema: $systemName`n"
+        $caption += "Archivo: $logFileName`n"
+        $caption += "Fecha: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')"
+        
+        Write-Output "Preparando log para envío..." "Cyan"
+        
+        # Crear copia temporal del log para evitar problemas de archivo en uso
+        $tempLogPath = $null
+        $maxRetries = 3
+        $retryCount = 0
+        $copySuccess = $false
+        
+        while ($retryCount -lt $maxRetries -and -not $copySuccess) {
+            try {
+                # Generar nombre único para el archivo temporal
+                $tempFileName = "TelegramLog_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(Get-Random -Maximum 9999).log"
+                $tempLogPath = Join-Path $env:TEMP $tempFileName
+                
+                Write-Output "Creando copia temporal: $tempFileName" "Gray"
+                
+                # Intentar copiar el archivo con diferentes métodos
+                if ($retryCount -eq 0) {
+                    # Método 1: Copy-Item estándar
+                    Copy-Item -Path $LogPath -Destination $tempLogPath -Force
+                } elseif ($retryCount -eq 1) {
+                    # Método 2: Leer contenido y escribir a nuevo archivo
+                    $logContent = Get-Content -Path $LogPath -Raw -ErrorAction Stop
+                    $logContent | Out-File -FilePath $tempLogPath -Encoding UTF8 -Force
+                } else {
+                    # Método 3: Usar robocopy para archivos bloqueados
+                    $sourceDir = Split-Path $LogPath -Parent
+                    $sourceFile = Split-Path $LogPath -Leaf
+                    $tempDir = Split-Path $tempLogPath -Parent
+                    
+                    $robocopyResult = robocopy.exe $sourceDir $tempDir $sourceFile /R:1 /W:1 /NP /NDL /NJH /NJS
+                    
+                    if (Test-Path $tempLogPath) {
+                        # Renombrar el archivo copiado por robocopy
+                        $robocopyFile = Join-Path $tempDir $sourceFile
+                        if (Test-Path $robocopyFile -and $robocopyFile -ne $tempLogPath) {
+                            Move-Item $robocopyFile $tempLogPath -Force
+                        }
+                    }
+                }
+                
+                # Verificar que la copia se creó correctamente
+                if (Test-Path $tempLogPath) {
+                    $originalSize = (Get-Item $LogPath).Length
+                    $tempSize = (Get-Item $tempLogPath).Length
+                    
+                    if ($tempSize -gt 0) {
+                        Write-Output "[OK] Copia temporal creada: $([math]::Round($tempSize/1KB, 1))KB" "Green"
+                        $copySuccess = $true
+                    } else {
+                        Write-Output "[WARN] Copia temporal vacía, reintentando..." "Yellow"
+                        Remove-Item $tempLogPath -Force -ErrorAction SilentlyContinue
+                    }
+                } else {
+                    Write-Output "[WARN] No se pudo crear copia temporal, reintentando..." "Yellow"
+                }
+            }
+            catch {
+                Write-Output "[WARN] Error creando copia temporal (intento $($retryCount + 1)): $($_.Exception.Message)" "Yellow"
+                if ($tempLogPath -and (Test-Path $tempLogPath)) {
+                    Remove-Item $tempLogPath -Force -ErrorAction SilentlyContinue
+                }
+            }
+            
+            if (-not $copySuccess) {
+                $retryCount++
+                if ($retryCount -lt $maxRetries) {
+                    Write-Output "Esperando 2 segundos antes del siguiente intento..." "Gray"
+                    Start-Sleep -Seconds 2
+                }
+            }
+        }
+        
+        # Intentar enviar el archivo
+        if ($copySuccess -and $tempLogPath -and (Test-Path $tempLogPath)) {
+            Write-Output "Enviando copia temporal del log..." "Cyan"
+            
+            if (-not (Send-TelegramFile -FilePath $tempLogPath -Caption $caption)) {
+                $Success = $false
+            }
+            
+            # Limpiar archivo temporal
+            try {
+                Remove-Item $tempLogPath -Force -ErrorAction SilentlyContinue
+                Write-Output "Copia temporal eliminada" "Gray"
+            }
+            catch {
+                Write-Output "[WARN] No se pudo eliminar copia temporal: $tempLogPath" "Yellow"
+            }
+        } else {
+            Write-Output "[ERROR] No se pudo crear copia temporal del log después de $maxRetries intentos" "Red"
+            
+            # Como último recurso, intentar enviar el archivo original
+            Write-Output "Intentando enviar archivo original como último recurso..." "Yellow"
+            
+            try {
+                if (-not (Send-TelegramFile -FilePath $LogPath -Caption $caption)) {
+                    $Success = $false
+                    Write-Output "[ERROR] Tampoco se pudo enviar el archivo original" "Red"
+                }
+            }
+            catch {
+                Write-Output "[ERROR] Error enviando archivo original: $($_.Exception.Message)" "Red"
+                $Success = $false
+            }
         }
     } else {
         Write-Output "[ERROR] Archivo de log no encontrado: $LogPath" "Red"

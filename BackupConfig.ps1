@@ -3,17 +3,16 @@
 
 @{
     # Rutas de aplicaciones
-    RclonePath   = ".\rclone.exe"
+    RclonePath   = "rclone.exe"
     WinRarPath   = "C:\Program Files\WinRAR\winrar.exe"
     
     # Directorios
     WorkingDir   = "\Programas\BackupRemoto"
-    Usuario      = "sivack" 
     TempDir      = "D:\send1"
 
     # Configuración de servidor remoto - rclone
     RcloneRemote = "InfoCloud"  # Nombre del remote configurado en rclone
-    RcloneConfig = ".rclone.conf"  # Ruta al archivo de configuración de rclone
+    RcloneConfig = ""  # Ruta al archivo de configuración de rclone
     
     # Configuración de rclone
     RcloneUploadOnly = $true      # Solo subir archivos, no sincronizar
@@ -29,9 +28,6 @@
     RcloneContimeout = "60s"
     RcloneLowLevelRetries = 10
     RcloneUseServerModtime = $true
-    
-    # Configuración de ruta remota
-    RemotePath   = "/buffer/"     # Ruta en el servidor remoto
     
     # Limpieza automática del servidor
     RcloneDeleteOlderThan = 30    # Días para borrar archivos antiguos del servidor

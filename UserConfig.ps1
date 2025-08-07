@@ -3,6 +3,11 @@
 # Este archivo contiene la configuración específica del usuario
 
 @{
+    # Nombre usuario
+    Usuario      = "pascual" 
+    # Configuración de ruta remota
+    RemotePath   = "/buffer/"
+
     # Configuración de backup
     # Documentos (habilitar/deshabilitar backup)
     DocumentosEnabled = $true
