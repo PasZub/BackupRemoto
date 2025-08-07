@@ -271,50 +271,10 @@ function Send-TelegramFile {
                 return $false
             }
         } else {
-            # Fallback: usar metodo PowerShell nativo simplificado
-            Write-Output "Usando metodo PowerShell nativo..." "Gray"
+            # Fallback: usar método simple con Invoke-WebRequest y base64
+            Write-Output "Usando metodo PowerShell simplificado..." "Gray"
             
-            # Crear formulario multipart manualmente
-            $boundary = [System.Guid]::NewGuid().ToString()
-            $LF = "`r`n"
-            
-            # Leer archivo
-            $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
             $fileName = Split-Path $FilePath -Leaf
-            
-            # Construir body multipart
-            $bodyParts = @()
-            
-            # chat_id
-            $bodyParts += "--$boundary"
-            $bodyParts += "Content-Disposition: form-data; name=`"chat_id`""
-            $bodyParts += ""
-            $bodyParts += $TELEGRAM_CHAT_ID
-            
-            # caption (opcional)
-            if (-not [string]::IsNullOrEmpty($Caption)) {
-                $bodyParts += "--$boundary"
-                $bodyParts += "Content-Disposition: form-data; name=`"caption`""
-                $bodyParts += ""
-                $bodyParts += $Caption
-            }
-            
-            # document header
-            $bodyParts += "--$boundary"
-            $bodyParts += "Content-Disposition: form-data; name=`"document`"; filename=`"$fileName`""
-            $bodyParts += "Content-Type: application/octet-stream"
-            $bodyParts += ""
-            
-            # Convertir header a bytes
-            $headerText = ($bodyParts -join $LF) + $LF
-            $headerBytes = [System.Text.Encoding]::UTF8.GetBytes($headerText)
-            
-            # Footer
-            $footerText = $LF + "--$boundary--" + $LF
-            $footerBytes = [System.Text.Encoding]::UTF8.GetBytes($footerText)
-            
-            # Combinar todo
-            $bodyBytes = $headerBytes + $fileBytes + $footerBytes
             
             # Enviar con reintentos
             $maxRetries = 3
@@ -326,34 +286,64 @@ function Send-TelegramFile {
                         Write-Output "Reintentando envío de archivo (intento $attempt)..." "Yellow"
                     }
                     
-                    $Uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
-                    $headers = @{
-                        "Content-Type" = "multipart/form-data; boundary=$boundary"
+                    # Usar método más simple con boundary manual
+                    $boundary = [System.Guid]::NewGuid().ToString()
+                    $uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
+                    
+                    # Leer archivo en base64 para evitar problemas de encoding
+                    $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
+                    $fileContent = [System.Convert]::ToBase64String($fileBytes)
+                    
+                    # Crear body usando WebClient que es más simple
+                    $webClient = New-Object System.Net.WebClient
+                    $webClient.Headers.Add("Content-Type", "multipart/form-data; boundary=$boundary")
+                    
+                    # Construir formulario multipart simple
+                    $formData = "--$boundary`r`n"
+                    $formData += "Content-Disposition: form-data; name=`"chat_id`"`r`n`r`n"
+                    $formData += "$TELEGRAM_CHAT_ID`r`n"
+                    
+                    if (-not [string]::IsNullOrEmpty($Caption)) {
+                        $formData += "--$boundary`r`n"
+                        $formData += "Content-Disposition: form-data; name=`"caption`"`r`n`r`n"
+                        $formData += "$Caption`r`n"
                     }
                     
-                    $Response = Invoke-WebRequest -Uri $Uri -Method Post -Body $bodyBytes -Headers $headers -UseBasicParsing
+                    $formData += "--$boundary`r`n"
+                    $formData += "Content-Disposition: form-data; name=`"document`"; filename=`"$fileName`"`r`n"
+                    $formData += "Content-Type: application/octet-stream`r`n"
+                    $formData += "Content-Transfer-Encoding: base64`r`n`r`n"
+                    $formData += "$fileContent`r`n"
+                    $formData += "--$boundary--`r`n"
                     
-                    if ($Response.StatusCode -eq 200) {
-                        $JsonResponse = $Response.Content | ConvertFrom-Json
-                        if ($JsonResponse.ok) {
-                            Write-Output "[OK] Archivo enviado exitosamente" "Green"
-                            return $true
-                        } else {
-                            Write-Output "[ERROR] Error enviando archivo: $($JsonResponse.description)" "Red"
-                            return $false
-                        }
+                    # Convertir a bytes
+                    $formBytes = [System.Text.Encoding]::UTF8.GetBytes($formData)
+                    
+                    # Enviar usando WebClient
+                    $response = $webClient.UploadData($uri, "POST", $formBytes)
+                    $responseString = [System.Text.Encoding]::UTF8.GetString($response)
+                    
+                    # Limpiar recursos
+                    $webClient.Dispose()
+                    
+                    # Parsear respuesta
+                    $jsonResponse = $responseString | ConvertFrom-Json
+                    
+                    if ($jsonResponse.ok) {
+                        Write-Output "[OK] Archivo enviado exitosamente" "Green"
+                        return $true
                     } else {
-                        Write-Output "[ERROR] Error HTTP: $($Response.StatusCode)" "Red"
-                        if ($attempt -lt $maxRetries) {
-                            Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
-                            Start-Sleep -Seconds $retryDelay
-                            continue
-                        }
+                        Write-Output "[ERROR] Error enviando archivo: $($jsonResponse.description)" "Red"
                         return $false
                     }
                 }
                 catch {
                     Write-Output "[ERROR] Excepción enviando archivo (intento $attempt): $($_.Exception.Message)" "Red"
+                    
+                    # Limpiar recursos en caso de error
+                    if ($webClient) {
+                        $webClient.Dispose()
+                    }
                     
                     if ($attempt -lt $maxRetries) {
                         Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
