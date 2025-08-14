@@ -6,7 +6,18 @@
 
 .DESCRIPTION
     Script que realiza backup diferencial/completo de documentos y usuarios,
-    comprime con WinRAR y sube archivos con rclone
+    comprime con WinRAR y su        # Preparar parámetros de WinRAR
+        $WinRarArgs = @("A", "-r")  # Removemos -inul para poder capturar salida
+
+        # Agregar partición de archivos de 2GB
+        $WinRarArgs += "-v2g"
+        Write-ColoredOutput "Configuración: Partición de archivos en 2GB" "Gray"
+        
+        # Parámetros para evitar diálogos y continuar automáticamente
+        $WinRarArgs += "-y"      # Responder "Sí" a todas las preguntas
+        $WinRarArgs += "-o+"     # Sobrescribir archivos existentes
+        $WinRarArgs += "-ilog"   # Escribir nombres de archivos a log
+        $WinRarArgs += "-ierr"   # Enviar todos los mensajes a stderrcon rclone
 
 .PARAMETER Force
     Fuerza backup completo independientemente del día
@@ -83,6 +94,8 @@ if (Test-Path $UserConfigPath) {
         ProgramasEnabled = $false
         ProgramasSource = @()
         ProgramasExclude = @("*.exe", "*.tmp")
+        # Días para backup completo por defecto (Domingo=0, Miércoles=3)
+        BackupCompletoDias = @(0)
     }
     
     foreach ($key in $DefaultUserConfig.Keys) {
@@ -90,13 +103,30 @@ if (Test-Path $UserConfigPath) {
     }
 }
 
+# Validar configuración de días para backup completo
+if (-not $Config.ContainsKey('BackupCompletoDias') -or $Config.BackupCompletoDias.Count -eq 0) {
+    Write-Warning "Configuración de días para backup completo no definida. Usando valores por defecto (Domingo)"
+    $Config.BackupCompletoDias = @(0)
+} else {
+    # Validar que los días están en rango válido (0-6)
+    $diasValidos = $Config.BackupCompletoDias | Where-Object { $_ -ge 0 -and $_ -le 6 }
+    if ($diasValidos.Count -ne $Config.BackupCompletoDias.Count) {
+        Write-Warning "Algunos días configurados no son válidos (deben estar entre 0-6). Usando valores válidos solamente"
+        $Config.BackupCompletoDias = $diasValidos
+    }
+}
+
 # Funciones auxiliares
 function Write-ColoredOutput {
-    param([string]$Message, [string]$Color = "White")
+    param(
+        [string]$Message, 
+        [string]$Color = "White",
+        [switch]$NoLog  # Parámetro para evitar logging automático
+    )
     Write-Host $Message -ForegroundColor $Color
     
-    # También escribir al log si está habilitado
-    if ($Config.LogEnabled) {
+    # Solo escribir al log si está habilitado y NoLog no está activado
+    if ($Config.LogEnabled -and -not $NoLog) {
         Write-Log $Message
     }
 }
@@ -167,16 +197,27 @@ function Initialize-Environment {
     $script:DiaSemanaNombre = (Get-Date).DayOfWeek
     $script:DiaSemanaNumero = [int](Get-Date).DayOfWeek
     
-    # Determinar tipo de backup (0=Completo, 1=Diferencial)
-    if ($Force -or $script:DiaSemanaNombre -eq "Wednesday" -or $script:DiaSemanaNombre -eq "Sunday") {
+    # Determinar tipo de backup usando configuración personalizable
+    # Verificar si el día actual está en la lista de días para backup completo
+    $EsDiaBackupCompleto = $Config.BackupCompletoDias -contains $script:DiaSemanaNumero
+    
+    if ($Force -or $EsDiaBackupCompleto) {
         $script:TipoDiferencial = 0
         $script:TipoBackup = "COMPLETO"
+        $razonBackup = if ($Force) { "forzado por parámetro" } else { "día configurado para backup completo" }
+        Write-ColoredOutput "Backup completo ($razonBackup)" "Cyan"
     } else {
         $script:TipoDiferencial = 1
         $script:TipoBackup = "DIFERENCIAL"
+        Write-ColoredOutput "Backup diferencial (día no configurado para backup completo)" "Cyan"
     }
     
     $script:DiasAtras = $script:DiaSemanaNumero
+    
+    # Mostrar configuración de días
+    $diasNombres = @("Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado")
+    $diasConfigurados = $Config.BackupCompletoDias | ForEach-Object { $diasNombres[$_] }
+    Write-ColoredOutput "Días configurados para backup completo: $($diasConfigurados -join ', ')" "Gray"
     
     Write-ColoredOutput "Fecha: $script:FechaActual | Día: $script:DiaSemanaNombre | Tipo: $script:TipoBackup" "Yellow"
 }
@@ -232,8 +273,18 @@ function Invoke-WinRarCompress {
         Get-Content $ExcludeFile | ForEach-Object { Write-Log "  Exclude: $_" "INFO" }
         
         # Preparar parámetros de WinRAR
-        $WinRarArgs = @("A", "-r", "-inul")
+        $WinRarArgs = @("A", "-r")  # Removemos -inul para poder capturar salida
+
+        # Agregar partición de archivos de 2GB
+        $WinRarArgs += "-v2g"
+        Write-ColoredOutput "Configuración: Partición de archivos en 2GB" "Gray"
         
+        # Parámetros para evitar diálogos y continuar automáticamente
+        $WinRarArgs += "-y"      # Responder "Sí" a todas las preguntas
+        $WinRarArgs += "-o+"     # Sobrescribir archivos existentes
+        $WinRarArgs += "-ilog"   # Escribir nombres de archivos a log
+        $WinRarArgs += "-ierr"   # Enviar todos los mensajes a stderr
+
         # Agregar parámetros incrementales si es diferencial
         if ($Diferencial -eq 1) {
             $WinRarArgs += "-tnco$($script:DiasAtras)d"
@@ -248,36 +299,111 @@ function Invoke-WinRarCompress {
         $WinRarArgs += $ArchiveName
         $WinRarArgs += "@$IncludeFile"
         
-        # Ejecutar WinRAR
+        # Ejecutar WinRAR con captura de salida
         Write-ColoredOutput "Ejecutando: $($Config.WinRarPath) $($WinRarArgs -join ' ')" "Gray"
+        Write-Log "Iniciando compresión WinRAR: $($WinRarArgs -join ' ')" "INFO"
         
         if (Test-Path $Config.WinRarPath) {
-            $Process = Start-Process -FilePath $Config.WinRarPath -ArgumentList $WinRarArgs -Wait -PassThru -NoNewWindow
+            # Crear archivos temporales para capturar la salida de WinRAR
+            $TempOutputFile = "$env:TEMP\winrar_output_$(Get-Random).txt"
+            $TempErrorFile = "$env:TEMP\winrar_error_$(Get-Random).txt"
             
-            if ($Process.ExitCode -eq 0) {
-                Write-ColoredOutput "[OK] Compresión exitosa: $ArchiveName" "Green"
-                return 0
-            } else {
-                $ErrorMessage = switch ($Process.ExitCode) {
-                    1 { "Advertencias no fatales" }
-                    2 { "Error fatal" }
-                    3 { "CRC error en los datos" }
-                    4 { "Error de bloqueo" }
-                    5 { "Error de escritura" }
-                    6 { "Error de apertura de archivo" }
-                    7 { "Error de usuario" }
-                    8 { "Error de memoria" }
-                    9 { "Error de creación de archivo" }
-                    10 { "No hay archivos que añadir al archivo" }
-                    11 { "Parámetros incorrectos" }
-                    255 { "Break/Ctrl+C presionado" }
-                    default { "Error desconocido" }
+            try {
+                # Ejecutar WinRAR (ya incluye -ierr y -y para evitar diálogos)
+                $Process = Start-Process -FilePath $Config.WinRarPath -ArgumentList $WinRarArgs -Wait -PassThru -NoNewWindow -RedirectStandardOutput $TempOutputFile -RedirectStandardError $TempErrorFile
+                
+                # Leer y analizar la salida estándar de WinRAR
+                if (Test-Path $TempOutputFile) {
+                    $WinRarOutput = Get-Content $TempOutputFile -ErrorAction SilentlyContinue
+                    $WarningCount = 0
+                    $ErrorCount = 0
+                    $LockedFileCount = 0
+                    
+                    foreach ($line in $WinRarOutput) {
+                        # Capturar errores y advertencias
+                        if ($line -match "WARNING:|ERROR:|Cannot|Failed|Access denied|Sharing violation|locked|in use|Skipping") {
+                            if ($line -match "ERROR:|Cannot|Failed|Access denied") {
+                                $ErrorCount++
+                                Write-Log "[WINRAR ERROR] $line" "ERROR"
+                            } else {
+                                $WarningCount++
+                                Write-Log "[WINRAR WARNING] $line" "WARNING"
+                            }
+                        }
+                        # Capturar mensajes específicos de archivos bloqueados
+                        if ($line -match "File .* is locked|File .* is being used|Cannot open") {
+                            $LockedFileCount++
+                            Write-Log "[WINRAR FILE LOCKED] $line" "WARNING"
+                        }
+                        # Solo loggear información de progreso si es necesario (reducir spam)
+                        if ($line -match "Adding|Compressing" -and $line -notmatch "^\.\.\.$") {
+                            Write-Log "[WINRAR PROGRESS] $line" "INFO"
+                        }
+                    }
+                    
+                    # Resumen de problemas encontrados
+                    if ($ErrorCount -gt 0 -or $WarningCount -gt 0 -or $LockedFileCount -gt 0) {
+                        Write-ColoredOutput "[WARN] Problemas en compresión: $ErrorCount errores, $WarningCount advertencias, $LockedFileCount archivos bloqueados" "Yellow" -NoLog
+                        Write-Log "Resumen WinRAR: $ErrorCount errores, $WarningCount advertencias, $LockedFileCount archivos bloqueados" "WARNING"
+                    }
                 }
-                Write-ColoredOutput "[ERROR] Error en compresión: Código $($Process.ExitCode) - $ErrorMessage" "Red"
-                return 1
+                
+                # Leer y analizar la salida de error de WinRAR
+                if (Test-Path $TempErrorFile) {
+                    $WinRarErrors = Get-Content $TempErrorFile -ErrorAction SilentlyContinue
+                    $CriticalErrorCount = 0
+                    foreach ($line in $WinRarErrors) {
+                        if (-not [string]::IsNullOrWhiteSpace($line)) {
+                            $CriticalErrorCount++
+                            Write-Log "[WINRAR CRITICAL ERROR] $line" "ERROR"
+                        }
+                    }
+                    if ($CriticalErrorCount -gt 0) {
+                        Write-ColoredOutput "[ERROR] WinRAR reportó $CriticalErrorCount errores críticos" "Red" -NoLog
+                        Write-Log "WinRAR reportó $CriticalErrorCount errores críticos" "ERROR"
+                    }
+                }
+                
+                # Log adicional con información del proceso
+                Write-Log "WinRAR terminó con código de salida: $($Process.ExitCode)" "INFO"
+                
+                # Evaluar resultado según código de salida
+                if ($Process.ExitCode -eq 0) {
+                    Write-ColoredOutput "[OK] Compresión exitosa: $ArchiveName" "Green" -NoLog
+                    Write-Log "Compresión WinRAR completada exitosamente" "SUCCESS"
+                    return 0
+                } elseif ($Process.ExitCode -eq 1) {
+                    Write-ColoredOutput "[OK] Compresión completada con advertencias: $ArchiveName" "Yellow" -NoLog
+                    Write-Log "Compresión WinRAR completada con advertencias (algunos archivos omitidos)" "WARNING"
+                    return 0  # Consideramos éxito con advertencias
+                } else {
+                    $ErrorMessage = switch ($Process.ExitCode) {
+                        2 { "Error fatal" }
+                        3 { "CRC error en los datos" }
+                        4 { "Error de bloqueo" }
+                        5 { "Error de escritura" }
+                        6 { "Error de apertura de archivo" }
+                        7 { "Error de usuario" }
+                        8 { "Error de memoria" }
+                        9 { "Error de creación de archivo" }
+                        10 { "No hay archivos que añadir al archivo" }
+                        11 { "Parámetros incorrectos" }
+                        255 { "Break/Ctrl+C presionado" }
+                        default { "Error desconocido" }
+                    }
+                    Write-ColoredOutput "[ERROR] Error en compresión: Código $($Process.ExitCode) - $ErrorMessage" "Red" -NoLog
+                    Write-Log "Error en compresión WinRAR: Código $($Process.ExitCode) - $ErrorMessage" "ERROR"
+                    return 1
+                }
+            }
+            finally {
+                # Limpiar archivos temporales de salida
+                Remove-Item -Path $TempOutputFile -ErrorAction SilentlyContinue
+                Remove-Item -Path $TempErrorFile -ErrorAction SilentlyContinue
             }
         } else {
-            Write-ColoredOutput "[ERROR] WinRAR no encontrado en: $($Config.WinRarPath)" "Red"
+            Write-ColoredOutput "[ERROR] WinRAR no encontrado en: $($Config.WinRarPath)" "Red" -NoLog
+            Write-Log "WinRAR no encontrado en la ruta: $($Config.WinRarPath)" "ERROR"
             return 1
         }
     }

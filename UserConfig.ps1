@@ -8,6 +8,10 @@
     # Configuración de ruta remota
     RemotePath   = "/buffer/"
 
+    # Configuración de días para backup completo
+    # Días de la semana para backup completo (0=Domingo, 1=Lunes, 2=Martes, 3=Miércoles, 4=Jueves, 5=Viernes, 6=Sábado)
+    BackupCompletoDias = @(0,3)  # Solo domingo por defecto
+
     # Configuración de backup
     # Documentos (habilitar/deshabilitar backup)
     DocumentosEnabled = $true

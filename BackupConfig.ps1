@@ -19,7 +19,7 @@
     RcloneRetryCount = 3          # Número de reintentos en caso de error
     RcloneBandwidth = "0"         # Límite de ancho de banda (0 = sin límite)
     RcloneProgress = $true        # Mostrar progreso de transferencia
-    RcloneTransfers = 8
+    RcloneTransfers = 2
     RcloneCheckers = 16
     RcloneBufferSize = "32M"
     RcloneMultiThreadCutoff = "250M"
