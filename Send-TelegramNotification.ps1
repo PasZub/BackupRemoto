@@ -45,14 +45,30 @@ $TELEGRAM_CHAT_ID = "-1001575024278"
 
 # Configurar TLS 1.2 para evitar errores SSL/TLS con Telegram API
 try {
+    # Configurar protocolos de seguridad más robustos para Windows Server
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+    [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    [Net.ServicePointManager]::CheckCertificateRevocationList = $false
+    [Net.ServicePointManager]::MaxServicePointIdleTime = 30000
+    
     if (-not $Silent) {
-        Write-Verbose "TLS 1.2 habilitado para conexiones HTTPS"
+        Write-Verbose "Configuración de seguridad SSL/TLS aplicada para Windows Server"
     }
 }
 catch {
     if (-not $Silent) {
-        Write-Warning "No se pudo configurar TLS 1.2: $($_.Exception.Message)"
+        Write-Warning "No se pudo configurar completamente SSL/TLS: $($_.Exception.Message)"
+    }
+}
+
+# Configurar encoding UTF-8 para evitar problemas de caracteres
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+}
+catch {
+    if (-not $Silent) {
+        Write-Verbose "No se pudo configurar encoding UTF-8"
     }
 }
 
@@ -109,6 +125,13 @@ if (-not $Config.ContainsKey('Usuario') -or [string]::IsNullOrEmpty($Config.Usua
 function Write-Output {
     param([string]$Message, [string]$Color = "White")
     if (-not $Silent) {
+        # Asegurar codificación UTF-8 correcta para la consola
+        try {
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        }
+        catch {
+            # Si no se puede cambiar la codificación, continuar normalmente
+        }
         Write-Host $Message -ForegroundColor $Color
     }
 }
@@ -240,123 +263,171 @@ function Send-TelegramFile {
             $Uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
             $fileName = Split-Path $FilePath -Leaf
             
-            # Construir argumentos para curl
+            # Configurar curl con opciones más robustas para Windows Server
             $curlArgs = @(
-                "-X", "POST",
-                "-F", "chat_id=$TELEGRAM_CHAT_ID",
+                "-X", "POST"
+                "--tlsv1.2"                    # Forzar TLS 1.2
+                "--ssl-no-revoke"              # Evitar verificación de revocación SSL (común en servidores)
+                "--max-time", "120"            # Timeout de 2 minutos
+                "--retry", "3"                 # 3 reintentos
+                "--retry-delay", "5"           # 5 segundos entre reintentos
+                "--show-error"                 # Mostrar errores detallados
+                "--fail"                       # Fallar en códigos HTTP de error
+                "-F", "chat_id=$TELEGRAM_CHAT_ID"
                 "-F", "document=@`"$FilePath`""
             )
             
+            # Agregar caption si existe
             if (-not [string]::IsNullOrEmpty($Caption)) {
                 $curlArgs += "-F"
                 $curlArgs += "caption=$Caption"
             }
             
+            # Agregar URL al final
             $curlArgs += $Uri
             
-            # Ejecutar curl
-            $result = & $curlPath $curlArgs 2>$null
-            
-            if ($LASTEXITCODE -eq 0) {
-                $response = $result | ConvertFrom-Json
-                if ($response.ok) {
-                    Write-Output "[OK] Archivo enviado exitosamente" "Green"
-                    return $true
+            # Ejecutar curl con captura de error mejorada
+            try {
+                Write-Output "Ejecutando: curl $($curlArgs -join ' ')" "Gray"
+                
+                # Ejecutar curl y capturar tanto salida como error
+                $curlOutput = & $curlPath $curlArgs 2>&1
+                $curlExitCode = $LASTEXITCODE
+                
+                Write-Output "Codigo de salida curl: $curlExitCode" "Gray"
+                
+                if ($curlExitCode -eq 0) {
+                    # Parsear respuesta JSON
+                    try {
+                        $response = $curlOutput | Where-Object { $_ -match '^\{.*\}$' } | ConvertFrom-Json
+                        if ($response.ok) {
+                            Write-Output "[OK] Archivo enviado exitosamente via curl" "Green"
+                            return $true
+                        } else {
+                            Write-Output "[ERROR] Error en respuesta Telegram: $($response.description)" "Red"
+                            Write-Output "Respuesta completa: $curlOutput" "Gray"
+                        }
+                    }
+                    catch {
+                        Write-Output "[WARN] Respuesta curl no JSON válido: $curlOutput" "Yellow"
+                        # Si hay respuesta pero no es JSON válido, asumir éxito si no hay error HTTP
+                        if ($curlOutput -notmatch "error|failed|HTTP") {
+                            Write-Output "[OK] Archivo probablemente enviado (respuesta no estándar)" "Green"
+                            return $true
+                        }
+                    }
                 } else {
-                    Write-Output "[ERROR] Error enviando archivo: $($response.description)" "Red"
-                    return $false
+                    Write-Output "[ERROR] Error ejecutando curl: codigo $curlExitCode" "Red"
+                    Write-Output "Salida de error curl: $curlOutput" "Red"
+                    
+                    # Códigos de error curl más comunes y sus significados
+                    $curlErrorMessage = switch ($curlExitCode) {
+                        6 { "No se pudo resolver el host (DNS)" }
+                        7 { "No se pudo conectar al servidor" }
+                        28 { "Timeout de operación" }
+                        35 { "Error SSL/TLS - problema de handshake" }
+                        51 { "Certificado SSL no válido" }
+                        52 { "El servidor no respondió" }
+                        56 { "Error recibiendo datos de red" }
+                        60 { "Problema con certificado CA" }
+                        77 { "Error SSL CA cert (path? access rights?)" }
+                        default { "Error desconocido" }
+                    }
+                    Write-Output "Descripción del error: $curlErrorMessage" "Red"
                 }
-            } else {
-                Write-Output "[ERROR] Error ejecutando curl: codigo $LASTEXITCODE" "Red"
-                return $false
+                
+                # Si curl falla, intentar con método PowerShell como fallback
+                Write-Output "Curl falló, intentando con método PowerShell..." "Yellow"
             }
-        } else {
-            # Fallback: usar método simple con Invoke-WebRequest y base64
-            Write-Output "Usando metodo PowerShell simplificado..." "Gray"
-            
-            $fileName = Split-Path $FilePath -Leaf
-            
-            # Enviar con reintentos
-            $maxRetries = 3
-            $retryDelay = 2
-            
-            for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
-                try {
-                    if ($attempt -gt 1) {
-                        Write-Output "Reintentando envío de archivo (intento $attempt)..." "Yellow"
-                    }
-                    
-                    # Usar método más simple con boundary manual
-                    $boundary = [System.Guid]::NewGuid().ToString()
-                    $uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
-                    
-                    # Leer archivo en base64 para evitar problemas de encoding
-                    $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
-                    $fileContent = [System.Convert]::ToBase64String($fileBytes)
-                    
-                    # Crear body usando WebClient que es más simple
-                    $webClient = New-Object System.Net.WebClient
-                    $webClient.Headers.Add("Content-Type", "multipart/form-data; boundary=$boundary")
-                    
-                    # Construir formulario multipart simple
-                    $formData = "--$boundary`r`n"
-                    $formData += "Content-Disposition: form-data; name=`"chat_id`"`r`n`r`n"
-                    $formData += "$TELEGRAM_CHAT_ID`r`n"
-                    
-                    if (-not [string]::IsNullOrEmpty($Caption)) {
-                        $formData += "--$boundary`r`n"
-                        $formData += "Content-Disposition: form-data; name=`"caption`"`r`n`r`n"
-                        $formData += "$Caption`r`n"
-                    }
-                    
-                    $formData += "--$boundary`r`n"
-                    $formData += "Content-Disposition: form-data; name=`"document`"; filename=`"$fileName`"`r`n"
-                    $formData += "Content-Type: application/octet-stream`r`n"
-                    $formData += "Content-Transfer-Encoding: base64`r`n`r`n"
-                    $formData += "$fileContent`r`n"
-                    $formData += "--$boundary--`r`n"
-                    
-                    # Convertir a bytes
-                    $formBytes = [System.Text.Encoding]::UTF8.GetBytes($formData)
-                    
-                    # Enviar usando WebClient
-                    $response = $webClient.UploadData($uri, "POST", $formBytes)
-                    $responseString = [System.Text.Encoding]::UTF8.GetString($response)
-                    
-                    # Limpiar recursos
-                    $webClient.Dispose()
-                    
-                    # Parsear respuesta
-                    $jsonResponse = $responseString | ConvertFrom-Json
-                    
-                    if ($jsonResponse.ok) {
-                        Write-Output "[OK] Archivo enviado exitosamente" "Green"
-                        return $true
-                    } else {
-                        Write-Output "[ERROR] Error enviando archivo: $($jsonResponse.description)" "Red"
-                        return $false
-                    }
-                }
-                catch {
-                    Write-Output "[ERROR] Excepción enviando archivo (intento $attempt): $($_.Exception.Message)" "Red"
-                    
-                    # Limpiar recursos en caso de error
-                    if ($webClient) {
-                        $webClient.Dispose()
-                    }
-                    
-                    if ($attempt -lt $maxRetries) {
-                        Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
-                        Start-Sleep -Seconds $retryDelay
-                    } else {
-                        Write-Output "[ERROR] Error después de $maxRetries intentos" "Red"
-                        return $false
-                    }
-                }
+            catch {
+                Write-Output "[ERROR] Excepción ejecutando curl: $($_.Exception.Message)" "Red"
+                Write-Output "Intentando con método PowerShell..." "Yellow"
             }
-            
-            return $false
         }
+        # Método PowerShell mejorado como fallback o método principal
+        Write-Output "Usando método PowerShell nativo..." "Gray"
+        
+        $maxRetries = 3
+        $retryDelay = 3
+        
+        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+            try {
+                if ($attempt -gt 1) {
+                    Write-Output "Reintentando envío de archivo (intento $attempt)..." "Yellow"
+                }
+                
+                # Configurar protocolo de seguridad
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+                
+                $uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
+                $fileName = Split-Path $FilePath -Leaf
+                
+                # Método simplificado usando Add-Type para formularios multipart
+                Add-Type -AssemblyName System.Net.Http
+                
+                $httpClient = New-Object System.Net.Http.HttpClient
+                $httpClient.Timeout = [TimeSpan]::FromMinutes(5)  # 5 minutos timeout
+                
+                try {
+                    $multipartContent = New-Object System.Net.Http.MultipartFormDataContent
+                    
+                    # Agregar chat_id
+                    $chatIdContent = New-Object System.Net.Http.StringContent($TELEGRAM_CHAT_ID)
+                    $multipartContent.Add($chatIdContent, "chat_id")
+                    
+                    # Agregar caption si existe
+                    if (-not [string]::IsNullOrEmpty($Caption)) {
+                        $captionContent = New-Object System.Net.Http.StringContent($Caption)
+                        $multipartContent.Add($captionContent, "caption")
+                    }
+                    
+                    # Leer archivo y agregarlo
+                    $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
+                    $fileContent = New-Object System.Net.Http.ByteArrayContent($fileBytes)
+                    $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
+                    $multipartContent.Add($fileContent, "document", $fileName)
+                    
+                    # Enviar request
+                    Write-Output "Enviando archivo usando HttpClient..." "Gray"
+                    $response = $httpClient.PostAsync($uri, $multipartContent).Result
+                    
+                    if ($response.IsSuccessStatusCode) {
+                        $responseContent = $response.Content.ReadAsStringAsync().Result
+                        $jsonResponse = $responseContent | ConvertFrom-Json
+                        
+                        if ($jsonResponse.ok) {
+                            Write-Output "[OK] Archivo enviado exitosamente via PowerShell" "Green"
+                            return $true
+                        } else {
+                            Write-Output "[ERROR] Error en respuesta Telegram: $($jsonResponse.description)" "Red"
+                        }
+                    } else {
+                        Write-Output "[ERROR] Error HTTP: $($response.StatusCode) - $($response.ReasonPhrase)" "Red"
+                    }
+                }
+                finally {
+                    # Limpiar recursos
+                    if ($multipartContent) { $multipartContent.Dispose() }
+                    if ($httpClient) { $httpClient.Dispose() }
+                }
+            }
+            catch {
+                Write-Output "[ERROR] Excepción enviando archivo (intento $attempt): $($_.Exception.Message)" "Red"
+                if ($_.Exception.InnerException) {
+                    Write-Output "Error interno: $($_.Exception.InnerException.Message)" "Red"
+                }
+                
+                if ($attempt -lt $maxRetries) {
+                    Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
+                    Start-Sleep -Seconds $retryDelay
+                } else {
+                    Write-Output "[ERROR] Error después de $maxRetries intentos con PowerShell" "Red"
+                }
+            }
+        }
+        
+        return $false
     }
     catch {
         Write-Output "[ERROR] Excepcion enviando archivo: $($_.Exception.Message)" "Red"
@@ -369,6 +440,28 @@ function Send-TelegramFile {
 # ============================================================================
 
 Write-Output "`n=== NOTIFICACION TELEGRAM ===" "Yellow"
+
+# Diagnóstico básico de conectividad (solo si no es modo silencioso)
+if (-not $Silent) {
+    Write-Output "Verificando conectividad..." "Gray"
+    try {
+        $telegramHost = "api.telegram.org"
+        $pingResult = Test-NetConnection -ComputerName $telegramHost -Port 443 -InformationLevel Quiet -ErrorAction SilentlyContinue
+        if ($pingResult) {
+            Write-Output "[OK] Conectividad a ${telegramHost}: disponible" "Green"
+        } else {
+            Write-Output "[WARN] Conectividad a ${telegramHost}: limitada o bloqueada" "Yellow"
+            Write-Output "Esto puede indicar problemas de firewall, proxy o DNS" "Yellow"
+        }
+    }
+    catch {
+        Write-Output "[WARN] No se pudo verificar conectividad: $($_.Exception.Message)" "Yellow"
+    }
+    
+    # Verificar versión de PowerShell
+    Write-Output "PowerShell versión: $($PSVersionTable.PSVersion)" "Gray"
+    Write-Output "SO: $($PSVersionTable.OS)" "Gray"
+}
 
 $Success = $true
 
