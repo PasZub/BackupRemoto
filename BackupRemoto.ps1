@@ -203,12 +203,12 @@ function Initialize-Environment {
     
     $script:DiasAtras = $script:DiaSemanaNumero
     
-    # Mostrar configuración de días
-    $diasNombres = @("Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado")
+    # Mostrar configuracion de dias
+    $diasNombres = @("Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado")
     $diasConfigurados = $Config.BackupCompletoDias | ForEach-Object { $diasNombres[$_] }
-    Write-ColoredOutput "Días configurados para backup completo: $($diasConfigurados -join ', ')" "Gray"
+    Write-ColoredOutput "Dias configurados para backup completo: $($diasConfigurados -join ', ')" "Gray"
     
-    Write-ColoredOutput "Fecha: $script:FechaActual | Día: $script:DiaSemanaNombre | Tipo: $script:TipoBackup" "Yellow"
+    Write-ColoredOutput "Fecha: $script:FechaActual | Dia: $script:DiaSemanaNombre | Tipo: $script:TipoBackup" "Yellow"
 }
 
 function Invoke-WinRarCompress {
@@ -278,7 +278,7 @@ function Invoke-WinRarCompress {
         if ($Diferencial -eq 1) {
             $WinRarArgs += "-tnco$($script:DiasAtras)d"
             $WinRarArgs += "-tnmo$($script:DiasAtras)d"
-            Write-ColoredOutput "Modo diferencial: últimos $($script:DiasAtras) días" "Gray"
+            Write-ColoredOutput "Modo diferencial: ultimos $($script:DiasAtras) dias" "Gray"
         } else {
             Write-ColoredOutput "Modo completo: todos los archivos" "Gray"
         }
@@ -332,7 +332,7 @@ function Invoke-WinRarCompress {
                     
                     # Resumen de problemas encontrados
                     if ($ErrorCount -gt 0 -or $WarningCount -gt 0 -or $LockedFileCount -gt 0) {
-                        Write-ColoredOutput "[WARN] Problemas en compresión: $ErrorCount errores, $WarningCount advertencias, $LockedFileCount archivos bloqueados" "Yellow" -NoLog
+                        Write-ColoredOutput "[WARN] Problemas en compresion: $ErrorCount errores, $WarningCount advertencias, $LockedFileCount archivos bloqueados" "Yellow" -NoLog
                         Write-Log "Resumen WinRAR: $ErrorCount errores, $WarningCount advertencias, $LockedFileCount archivos bloqueados" "WARNING"
                     }
                 }
@@ -356,14 +356,14 @@ function Invoke-WinRarCompress {
                 # Log adicional con información del proceso
                 Write-Log "WinRAR terminó con código de salida: $($Process.ExitCode)" "INFO"
                 
-                # Evaluar resultado según código de salida
+                # Evaluar resultado segun codigo de salida
                 if ($Process.ExitCode -eq 0) {
-                    Write-ColoredOutput "[OK] Compresión exitosa: $ArchiveName" "Green" -NoLog
-                    Write-Log "Compresión WinRAR completada exitosamente" "SUCCESS"
+                    Write-ColoredOutput "[OK] Compresion exitosa: $ArchiveName" "Green" -NoLog
+                    Write-Log "Compresion WinRAR completada exitosamente" "SUCCESS"
                     return 0
                 } elseif ($Process.ExitCode -eq 1) {
-                    Write-ColoredOutput "[OK] Compresión completada con advertencias: $ArchiveName" "Yellow" -NoLog
-                    Write-Log "Compresión WinRAR completada con advertencias (algunos archivos omitidos)" "WARNING"
+                    Write-ColoredOutput "[OK] Compresion completada con advertencias: $ArchiveName" "Yellow" -NoLog
+                    Write-Log "Compresion WinRAR completada con advertencias (algunos archivos omitidos)" "WARNING"
                     return 0  # Consideramos éxito con advertencias
                 } else {
                     $ErrorMessage = switch ($Process.ExitCode) {
@@ -376,12 +376,12 @@ function Invoke-WinRarCompress {
                         8 { "Error de memoria" }
                         9 { "Error de creación de archivo" }
                         10 { "No hay archivos que añadir al archivo" }
-                        11 { "Parámetros incorrectos" }
+                        11 { "Parametros incorrectos" }
                         255 { "Break/Ctrl+C presionado" }
                         default { "Error desconocido" }
                     }
-                    Write-ColoredOutput "[ERROR] Error en compresión: Código $($Process.ExitCode) - $ErrorMessage" "Red" -NoLog
-                    Write-Log "Error en compresión WinRAR: Código $($Process.ExitCode) - $ErrorMessage" "ERROR"
+                    Write-ColoredOutput "[ERROR] Error en compresion: Codigo $($Process.ExitCode) - $ErrorMessage" "Red" -NoLog
+                    Write-Log "Error en compresion WinRAR: Codigo $($Process.ExitCode) - $ErrorMessage" "ERROR"
                     return 1
                 }
             }
@@ -504,7 +504,7 @@ function Backup-Programas {
 function Sync-ToRclone {
     param([string]$LocalPath)
     
-    Write-ColoredOutput "`n=== SINCRONIZACIÓN RCLONE ===" "Yellow"
+    Write-ColoredOutput "`n=== SINCRONIZACION RCLONE ===" "Yellow"
     
     if (-not (Test-Path $Config.RclonePath)) {
         Write-ColoredOutput "[ERROR] rclone no encontrado en: $($Config.RclonePath)" "Red"
@@ -657,7 +657,7 @@ function Clear-OldFilesFromServer {
             $DeleteArgs += "--config=$($Config.RcloneConfig)"
         }
         
-        Write-ColoredOutput "Eliminando archivos mayores a $($Config.RcloneDeleteOlderThan) días del servidor" "Cyan"
+        Write-ColoredOutput "Eliminando archivos mayores a $($Config.RcloneDeleteOlderThan) dias del servidor" "Cyan"
         Write-Log "Argumentos rclone delete: $($DeleteArgs -join ' ')" "INFO"
         
         $Process = Start-Process -FilePath $Config.RclonePath -ArgumentList $DeleteArgs -Wait -PassThru -NoNewWindow
@@ -768,7 +768,7 @@ function Get-BackupSummaryText {
     $Summary += "---------------------`n"
     
     # Ordenar resultados para mantener consistencia
-    $orderedTasks = @("Backup Programas", "Backup Documentos", "Backup Usuarios", "Sincronización rclone")
+    $orderedTasks = @("Backup Programas", "Backup Documentos", "Backup Usuarios", "Sincronizacion rclone")
     
     foreach ($Task in $orderedTasks) {
         if ($Results.ContainsKey($Task)) {
@@ -831,9 +831,9 @@ function Check-ForUpdates {
             $latestVersion = $releaseInfo.tag_name
             
             if ($currentVersion -ne $latestVersion) {
-                Write-ColoredOutput "`n[ACTUALIZACIÓN DISPONIBLE] Nueva versión: $latestVersion (actual: $currentVersion)" "Yellow"
+                Write-ColoredOutput "`n[ACTUALIZACION DISPONIBLE] Nueva version: $latestVersion (actual: $currentVersion)" "Yellow"
                 Write-ColoredOutput "Ejecuta '.\Update-BackupSystem.ps1' para actualizar" "Yellow"
-                Write-Log "Actualización disponible: $latestVersion (actual: $currentVersion)" "INFO"
+                Write-Log "Actualizacion disponible: $latestVersion (actual: $currentVersion)" "INFO"
             }
         }
         catch {
@@ -985,7 +985,7 @@ function Main {
         }
         
         # Subir archivos con rclone
-        $Results["Sincronización rclone"] = Sync-ToRclone -LocalPath "$($Config.TempDir)/"
+        $Results["Sincronizacion rclone"] = Sync-ToRclone -LocalPath "$($Config.TempDir)/"
         
         # Limpiar archivos temporales (pero NO los logs que están dentro del TempDir)
         Clear-TempFiles -TempPath $Config.TempDir

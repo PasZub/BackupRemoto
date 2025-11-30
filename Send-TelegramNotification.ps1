@@ -440,7 +440,7 @@ function Send-TelegramFile {
 
 Write-Output "`n=== NOTIFICACION TELEGRAM ===" "Yellow"
 
-# Diagnóstico básico de conectividad (solo si no es modo silencioso)
+# Diagnostico basico de conectividad (solo si no es modo silencioso)
 if (-not $Silent) {
     Write-Output "Verificando conectividad..." "Gray"
     try {
@@ -457,8 +457,8 @@ if (-not $Silent) {
         Write-Output "[WARN] No se pudo verificar conectividad: $($_.Exception.Message)" "Yellow"
     }
     
-    # Verificar versión de PowerShell
-    Write-Output "PowerShell versión: $($PSVersionTable.PSVersion)" "Gray"
+    # Verificar version de PowerShell
+    Write-Output "PowerShell version: $($PSVersionTable.PSVersion)" "Gray"
     Write-Output "SO: $($PSVersionTable.OS)" "Gray"
 }
 
@@ -472,7 +472,7 @@ if (-not [string]::IsNullOrEmpty($Message)) {
     }
 }
 
-# Enviar archivo de log específico si se especifica
+# Enviar archivo de log especifico si se especifica
 if (-not [string]::IsNullOrEmpty($LogPath)) {
     if (Test-Path $LogPath) {
         # Crear caption simple para el log
@@ -485,7 +485,7 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
         
         $caption = "Log: $logFileName - Sistema: $systemName"
         
-        Write-Output "Preparando log para envío..." "Cyan"
+        Write-Output "Preparando log para envio..." "Cyan"
         
         # Crear copia temporal del log para evitar problemas de archivo en uso
         $tempLogPath = $null
