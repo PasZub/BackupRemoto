@@ -759,13 +759,13 @@ function Get-BackupSummaryText {
     
     # Construir mensaje según el modelo especificado
     $Summary = "Cliente: $cliente - Informe`n"
-    $Summary += "─────────────────────`n"
+    $Summary += "---------------------`n"
     $Summary += "Fecha: $script:FechaActual`n"
-    $Summary += "🔄 Tipo: $script:TipoBackup`n"
-    $Summary += "🕒 Completado: $(Get-Date -Format 'HH:mm:ss')`n`n"
+    $Summary += "Tipo: $script:TipoBackup`n"
+    $Summary += "Completado: $(Get-Date -Format 'HH:mm:ss')`n`n"
     
-    $Summary += "📊 RESULTADOS:`n"
-    $Summary += "─────────────────────`n"
+    $Summary += "RESULTADOS:`n"
+    $Summary += "---------------------`n"
     
     # Ordenar resultados para mantener consistencia
     $orderedTasks = @("Backup Programas", "Backup Documentos", "Backup Usuarios", "Sincronización rclone")
@@ -775,13 +775,13 @@ function Get-BackupSummaryText {
             $Result = $Results[$Task]
             
             if ($Result -eq "DESHABILITADO") {
-                $Status = "⏭️ DESHABILITADO"
+                $Status = "[SKIP] DESHABILITADO"
             } elseif ($Result -eq 0) {
-                $Status = "✅ EXITOSO"
+                $Status = "[OK] EXITOSO"
             } elseif ($Result -eq 1) {
-                $Status = "❌ FALLIDO"
+                $Status = "[ERROR] FALLIDO"
             } else {
-                $Status = "❔ DESCONOCIDO"
+                $Status = "[?] DESCONOCIDO"
             }
             
             $Summary += "• $Task`: $Status`n"
@@ -867,14 +867,14 @@ function Send-BackupNotification {
     try {
         # Crear mensaje según el resultado
         if ($Success) {
-            $Message = "🎉 BACKUP COMPLETADO EXITOSAMENTE`n`n"
+            $Message = "[OK] BACKUP COMPLETADO EXITOSAMENTE`n`n"
             $Message += Get-BackupSummaryText -Results $Results
-            $Icon = "✅"
+            $Icon = "[OK]"
         } else {
-            $Message = "⚠️ BACKUP COMPLETADO CON ERRORES`n`n"
+            $Message = "[ERROR] BACKUP COMPLETADO CON ERRORES`n`n"
             $Message += Get-BackupSummaryText -Results $Results
-            $Message += "`n🔍 Revise el archivo de log adjunto para más detalles."
-            $Icon = "❌"
+            $Message += "`nRevise el archivo de log adjunto para mas detalles."
+            $Icon = "[ERROR]"
         }
         
         Write-ColoredOutput "Enviando notificación: $Icon Backup $(if($Success){'exitoso'}else{'con errores'})" "Cyan"

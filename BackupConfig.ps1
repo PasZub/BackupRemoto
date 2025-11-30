@@ -3,7 +3,7 @@
 
 @{
     # Rutas de aplicaciones
-    RclonePath   = "rclone.exe"
+    RclonePath   = ".\rclone.exe"
     WinRarPath   = "C:\Program Files\WinRAR\winrar.exe"
     
     # Directorios

@@ -483,7 +483,7 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
             $env:COMPUTERNAME 
         }
         
-        $caption = "📋 Log: $logFileName`n🖥️ Sistema: $systemName"
+        $caption = "Log: $logFileName - Sistema: $systemName"
         
         Write-Output "Preparando log para envío..." "Cyan"
         
