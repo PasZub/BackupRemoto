@@ -37,70 +37,59 @@ $ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPath = Join-Path $ScriptPath "BackupConfig.ps1"
 $UserConfigPath = Join-Path $ScriptPath "UserConfig.ps1"
 
-if (Test-Path $ConfigPath) {
-    $Config = & $ConfigPath
-} else {
-    # Configuración por defecto si no existe el archivo
-    $Config = @{
-        RclonePath   = "rclone.exe"
-        WinRarPath   = "C:\Program Files\WinRAR\winrar.exe"
-        WorkingDir   = "."
-        TempDir      = "E:\send1"
-        RcloneRemote = "InfoCloud"
-        RcloneConfig = ""
-        RcloneUploadOnly = $true
-        RcloneRetryCount = 3
-        RcloneBandwidth = "0"
-        RcloneProgress = $true
-        RcloneDeleteOlderThan = 30
-        RcloneDeleteEnabled = $true
-        RemotePath   = "/buffer/"
-        LogEnabled   = $true
-        LogPath      = "E:\send1\BackupLogs"
-        LogRetentionDays = 30
-        # Optimizaciones de rendimiento de rclone
-        RcloneTransfers = 8
-        RcloneCheckers = 16
-        RcloneBufferSize = "32M"
-        RcloneMultiThreadCutoff = "250M"
-        RcloneMultiThreadStreams = 4
-        RcloneTimeout = "5m"
-        RcloneContimeout = "60s"
-        RcloneLowLevelRetries = 10
-        RcloneUseServerModtime = $true
+# Verificar que existan los archivos de configuración requeridos
+$ConfigurationErrors = @()
+
+if (-not (Test-Path $ConfigPath)) {
+    $ConfigurationErrors += "Archivo de configuración del sistema no encontrado: $ConfigPath"
+}
+
+if (-not (Test-Path $UserConfigPath)) {
+    $ConfigurationErrors += "Archivo de configuración de usuario no encontrado: $UserConfigPath"
+}
+
+# Si hay errores de configuración, mostrar y salir
+if ($ConfigurationErrors.Count -gt 0) {
+    Write-Host "`n[ERROR CRÍTICO] Configuración incompleta del sistema de backup" -ForegroundColor Red
+    Write-Host "=" * 70 -ForegroundColor Red
+    Write-Host "`nNo se encontraron los siguientes archivos de configuración requeridos:`n" -ForegroundColor Yellow
+    
+    foreach ($error in $ConfigurationErrors) {
+        Write-Host "  ❌ $error" -ForegroundColor Red
     }
+    
+    Write-Host "`n[SOLUCIÓN]" -ForegroundColor Cyan
+    Write-Host "Por favor, cree los archivos de configuración necesarios:" -ForegroundColor White
+    Write-Host "  1. BackupConfig.ps1 - Configuración del sistema (rutas, rclone, etc.)" -ForegroundColor Gray
+    Write-Host "  2. UserConfig.ps1 - Configuración del usuario (backups a realizar)" -ForegroundColor Gray
+    Write-Host "`nPuede usar los archivos de ejemplo como plantilla." -ForegroundColor Gray
+    Write-Host "=" * 70 -ForegroundColor Red
+    
+    exit 2
+}
+
+# Cargar configuración del sistema
+try {
+    $Config = & $ConfigPath
+    Write-Verbose "Configuración del sistema cargada desde: $ConfigPath"
+}
+catch {
+    Write-Host "`n[ERROR] Error al cargar configuración del sistema: $($_.Exception.Message)" -ForegroundColor Red
+    exit 2
 }
 
 # Cargar configuración de usuario y combinar con configuración del sistema
-if (Test-Path $UserConfigPath) {
+try {
     $UserConfig = & $UserConfigPath
     # Combinar configuraciones (UserConfig tiene prioridad)
     foreach ($key in $UserConfig.Keys) {
         $Config[$key] = $UserConfig[$key]
     }
     Write-Verbose "Configuración de usuario cargada desde: $UserConfigPath"
-} else {
-    Write-Warning "Archivo de configuración de usuario no encontrado: $UserConfigPath"
-    Write-Warning "Usando configuración por defecto para backups"
-    
-    # Configuración por defecto de usuario si no existe el archivo
-    $DefaultUserConfig = @{
-        DocumentosEnabled = $false
-        DocumentosSource = @()
-        DocumentosExclude = @("*.tmp", "*.bak")
-        UsuariosEnabled = $false
-        UsuariosSource = @("C:\Users")
-        UsuariosExclude = @("*.pst", "*.exe", "*.tmp")
-        ProgramasEnabled = $false
-        ProgramasSource = @()
-        ProgramasExclude = @("*.exe", "*.tmp")
-        # Días para backup completo por defecto (Domingo=0, Miércoles=3)
-        BackupCompletoDias = @(0)
-    }
-    
-    foreach ($key in $DefaultUserConfig.Keys) {
-        $Config[$key] = $DefaultUserConfig[$key]
-    }
+}
+catch {
+    Write-Host "`n[ERROR] Error al cargar configuración de usuario: $($_.Exception.Message)" -ForegroundColor Red
+    exit 2
 }
 
 # Validar configuración de días para backup completo
@@ -761,46 +750,99 @@ function Show-Summary {
 function Get-BackupSummaryText {
     param([hashtable]$Results)
     
-    $Summary = "📋 RESUMEN DEL BACKUP`n"
-    $Summary += "═════════════════════`n"
-    $Summary += "📅 Fecha: $script:FechaActual`n"
+    # Obtener nombre del cliente desde configuración
+    $cliente = if ($Config.ContainsKey('Usuario') -and -not [string]::IsNullOrEmpty($Config.Usuario)) {
+        $Config.Usuario
+    } else {
+        $env:COMPUTERNAME
+    }
+    
+    # Construir mensaje según el modelo especificado
+    $Summary = "Cliente: $cliente - Informe`n"
+    $Summary += "─────────────────────`n"
+    $Summary += "Fecha: $script:FechaActual`n"
     $Summary += "🔄 Tipo: $script:TipoBackup`n"
-    $Summary += "📂 Destino: $($Config.TempDir)`n"
     $Summary += "🕒 Completado: $(Get-Date -Format 'HH:mm:ss')`n`n"
     
     $Summary += "📊 RESULTADOS:`n"
     $Summary += "─────────────────────`n"
     
-    $SuccessCount = 0
-    $ErrorCount = 0
-    $SkippedCount = 0
+    # Ordenar resultados para mantener consistencia
+    $orderedTasks = @("Backup Programas", "Backup Documentos", "Backup Usuarios", "Sincronización rclone")
     
-    foreach ($Task in $Results.Keys) {
-        $Result = $Results[$Task]
-        
-        if ($Result -eq "DESHABILITADO") {
-            $Status = "⏭️ DESHABILITADO"
-            $SkippedCount++
-        } elseif ($Result -eq 0) {
-            $Status = "✅ EXITOSO"
-            $SuccessCount++
-        } elseif ($Result -eq 1) {
-            $Status = "❌ FALLIDO"
-            $ErrorCount++
-        } else {
-            $Status = "❔ DESCONOCIDO"
+    foreach ($Task in $orderedTasks) {
+        if ($Results.ContainsKey($Task)) {
+            $Result = $Results[$Task]
+            
+            if ($Result -eq "DESHABILITADO") {
+                $Status = "⏭️ DESHABILITADO"
+            } elseif ($Result -eq 0) {
+                $Status = "✅ EXITOSO"
+            } elseif ($Result -eq 1) {
+                $Status = "❌ FALLIDO"
+            } else {
+                $Status = "❔ DESCONOCIDO"
+            }
+            
+            $Summary += "• $Task`: $Status`n"
         }
-        
-        $Summary += "• $Task`: $Status`n"
     }
     
-    $Summary += "`n📈 ESTADÍSTICAS:`n"
-    $Summary += "──────────────────`n"
-    $Summary += "✅ Exitosas: $SuccessCount`n"
-    $Summary += "❌ Fallidas: $ErrorCount`n"
-    $Summary += "⏭️ Omitidas: $SkippedCount`n"
-    
     return $Summary
+}
+
+function Check-ForUpdates {
+    try {
+        # Configuración del repositorio
+        $GITHUB_OWNER = "PasZub"
+        $GITHUB_REPO = "BackupRemoto"
+        
+        # Verificar si hay conexión a Internet (rápido, sin bloquear)
+        $canConnect = Test-NetConnection -ComputerName "api.github.com" -Port 443 -InformationLevel Quiet -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
+        
+        if (-not $canConnect) {
+            return  # Sin conexión, continuar sin verificar
+        }
+        
+        # Obtener versión actual
+        $versionFile = Join-Path $ScriptPath "VERSION.txt"
+        $currentVersion = if (Test-Path $versionFile) {
+            (Get-Content $versionFile -Raw -ErrorAction SilentlyContinue) -replace '.*Versión:\s*(\S+).*', '$1'
+        } else {
+            "Desconocida"
+        }
+        
+        # Consultar última versión (timeout corto)
+        $apiUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
+        
+        try {
+            # Timeout de 3 segundos para no retrasar el backup
+            $request = [System.Net.WebRequest]::Create($apiUrl)
+            $request.Timeout = 3000
+            $request.UserAgent = "PowerShell-BackupSystem"
+            
+            $response = $request.GetResponse()
+            $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
+            $content = $reader.ReadToEnd()
+            $reader.Close()
+            $response.Close()
+            
+            $releaseInfo = $content | ConvertFrom-Json
+            $latestVersion = $releaseInfo.tag_name
+            
+            if ($currentVersion -ne $latestVersion) {
+                Write-ColoredOutput "`n[ACTUALIZACIÓN DISPONIBLE] Nueva versión: $latestVersion (actual: $currentVersion)" "Yellow"
+                Write-ColoredOutput "Ejecuta '.\Update-BackupSystem.ps1' para actualizar" "Yellow"
+                Write-Log "Actualización disponible: $latestVersion (actual: $currentVersion)" "INFO"
+            }
+        }
+        catch {
+            # Silenciosamente ignorar errores de verificación
+        }
+    }
+    catch {
+        # Silenciosamente ignorar errores de verificación
+    }
 }
 
 function Send-BackupNotification {
@@ -895,6 +937,9 @@ function Main {
     Write-Log "========== INICIO DE SESIÓN DE BACKUP ==========" "INFO"
     Write-Log "Script iniciado: $(Get-Date)" "INFO"
     Write-Log "Parámetros: Force=$Force" "INFO"
+    
+    # Verificar si hay actualizaciones disponibles (no bloquea el backup)
+    Check-ForUpdates
     
     # Verificar permisos de administrador
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

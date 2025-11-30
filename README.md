@@ -2,6 +2,39 @@
 
 Sistema automatizado de backup que realiza compresión diferencial/completa con WinRAR y sincronización remota con rclone.
 
+## 🔄 Actualizaciones Automáticas
+
+El sistema incluye actualización automática desde GitHub sin necesidad de instalar Git.
+
+### Actualización Manual
+
+Para actualizar el sistema a la última versión:
+
+```powershell
+.\Update-BackupSystem.ps1
+```
+
+Con parámetros:
+```powershell
+# Actualizar sin confirmación
+.\Update-BackupSystem.ps1 -Force
+
+# Actualizar sin crear backup de configuración
+.\Update-BackupSystem.ps1 -Force -SkipBackup
+```
+
+### Verificación Automática
+
+El script `BackupRemoto.ps1` verifica automáticamente si hay actualizaciones disponibles al inicio de cada ejecución y muestra una notificación si hay una nueva versión.
+
+### Archivos Protegidos
+
+Los siguientes archivos **NO se sobrescribirán** durante la actualización:
+- `BackupConfig.ps1` - Tu configuración del sistema
+- `UserConfig.ps1` - Tu configuración de backups
+
+El script creará un backup de estos archivos antes de actualizar por seguridad.
+
 ## 📁 Estructura de Archivos
 
 ### Scripts Principales

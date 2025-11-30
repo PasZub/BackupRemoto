@@ -168,7 +168,6 @@ function Send-TelegramMessage {
             $Body = @{
                 chat_id = $TELEGRAM_CHAT_ID
                 text = $Text
-                parse_mode = "HTML"
             }
             
             if ($attempt -eq 1) {
@@ -467,31 +466,8 @@ $Success = $true
 
 # Enviar mensaje personalizado si se especifica
 if (-not [string]::IsNullOrEmpty($Message)) {
-    # Construir encabezado con información del sistema
-    $systemInfo = ""
-    if ($Config.ContainsKey('Usuario') -and -not [string]::IsNullOrEmpty($Config.Usuario)) {
-        $systemInfo = "Usuario: $($Config.Usuario)"
-    } else {
-        $systemInfo = "Sistema: $env:COMPUTERNAME"
-    }
-    
-    # Agregar información del directorio temporal si está disponible
-    if ($Config.ContainsKey('TempDir') -and -not [string]::IsNullOrEmpty($Config.TempDir)) {
-        $systemInfo += "`nDirectorio: $($Config.TempDir)"
-    }
-    
-    # Agregar información del servidor remoto si está disponible
-    if ($Config.ContainsKey('RcloneRemote') -and -not [string]::IsNullOrEmpty($Config.RcloneRemote)) {
-        $systemInfo += "`nServidor: $($Config.RcloneRemote)"
-    }
-    
-    $FormattedMessage = "<b>NOTIFICACION DE BACKUP</b>`n"
-    $FormattedMessage += "========================================`n"
-    $FormattedMessage += "$systemInfo`n`n"
-    $FormattedMessage += $Message
-    $FormattedMessage += "`n`nFecha: <i>$(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')</i>"
-    
-    if (-not (Send-TelegramMessage -Text $FormattedMessage)) {
+    # El mensaje ya viene formateado desde BackupRemoto.ps1
+    if (-not (Send-TelegramMessage -Text $Message)) {
         $Success = $false
     }
 }
@@ -499,7 +475,7 @@ if (-not [string]::IsNullOrEmpty($Message)) {
 # Enviar archivo de log específico si se especifica
 if (-not [string]::IsNullOrEmpty($LogPath)) {
     if (Test-Path $LogPath) {
-        # Crear caption más informativo
+        # Crear caption simple para el log
         $logFileName = Split-Path $LogPath -Leaf
         $systemName = if ($Config.ContainsKey('Usuario') -and -not [string]::IsNullOrEmpty($Config.Usuario)) { 
             $Config.Usuario 
@@ -507,11 +483,7 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
             $env:COMPUTERNAME 
         }
         
-        $caption = "LOG DEL SISTEMA DE BACKUP`n"
-        $caption += "========================================`n"
-        $caption += "Sistema: $systemName`n"
-        $caption += "Archivo: $logFileName`n"
-        $caption += "Fecha: $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')"
+        $caption = "📋 Log: $logFileName`n🖥️ Sistema: $systemName"
         
         Write-Output "Preparando log para envío..." "Cyan"
         

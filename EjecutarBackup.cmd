@@ -61,8 +61,4 @@ if %EXITCODE%==0 (
     echo Revise los logs para más información.
 )
 
-echo.
-echo Presione cualquier tecla para continuar...
-pause >nul
-
 exit /b %EXITCODE%
