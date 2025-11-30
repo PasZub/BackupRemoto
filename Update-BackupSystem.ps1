@@ -77,12 +77,16 @@ function Get-LatestReleaseInfo {
     try {
         Write-ColoredOutput "Consultando última versión en GitHub..." "Cyan"
         
+        # Configurar TLS 1.2
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+        
         # URL de la API de GitHub para obtener la última release
         $apiUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
         
         # Intentar obtener la última release
         try {
-            $response = Invoke-RestMethod -Uri $apiUrl -Method Get -ErrorAction Stop
+            $response = Invoke-RestMethod -Uri $apiUrl -Method Get -ErrorAction Stop -UseBasicParsing
             return @{
                 Version = $response.tag_name
                 ZipUrl = $response.zipball_url
@@ -96,14 +100,26 @@ function Get-LatestReleaseInfo {
             $zipUrl = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/archive/refs/heads/$GITHUB_BRANCH.zip"
             
             # Obtener el último commit del branch
-            $commitsUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/commits/$GITHUB_BRANCH"
-            $commitInfo = Invoke-RestMethod -Uri $commitsUrl -Method Get -ErrorAction SilentlyContinue
-            
-            return @{
-                Version = if ($commitInfo.sha) { $commitInfo.sha.Substring(0, 7) } else { "latest" }
-                ZipUrl = $zipUrl
-                PublishedAt = if ($commitInfo.commit.author.date) { $commitInfo.commit.author.date } else { Get-Date }
-                IsRelease = $false
+            try {
+                $commitsUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/commits/$GITHUB_BRANCH"
+                $commitInfo = Invoke-RestMethod -Uri $commitsUrl -Method Get -ErrorAction Stop -UseBasicParsing
+                
+                return @{
+                    Version = if ($commitInfo.sha) { $commitInfo.sha.Substring(0, 7) } else { "latest" }
+                    ZipUrl = $zipUrl
+                    PublishedAt = if ($commitInfo.commit.author.date) { $commitInfo.commit.author.date } else { Get-Date }
+                    IsRelease = $false
+                }
+            }
+            catch {
+                # Si falla todo, usar valores por defecto
+                Write-ColoredOutput "Usando valores por defecto" "Yellow"
+                return @{
+                    Version = "master-latest"
+                    ZipUrl = $zipUrl
+                    PublishedAt = Get-Date
+                    IsRelease = $false
+                }
             }
         }
     }
@@ -131,7 +147,7 @@ function Backup-Configuration {
             if (Test-Path $sourcePath) {
                 $destPath = Join-Path $BackupConfigDir $file
                 Copy-Item -Path $sourcePath -Destination $destPath -Force
-                Write-ColoredOutput "  ✓ Backup creado: $file" "Green"
+                Write-ColoredOutput "  Backup creado: $file" "Green"
                 $backedUpCount++
             }
         }
@@ -233,7 +249,7 @@ function Install-Update {
             
             # Verificar si es un archivo protegido
             if ($ProtectedFiles -contains $fileName) {
-                Write-ColoredOutput "  ⏭️  Omitido (protegido): $relativePath" "Yellow"
+                Write-ColoredOutput "  Omitido (protegido): $relativePath" "Yellow"
                 $skippedCount++
                 continue
             }
@@ -246,7 +262,7 @@ function Install-Update {
             
             # Copiar archivo
             Copy-Item -Path $file.FullName -Destination $destPath -Force
-            Write-ColoredOutput "  ✓ Actualizado: $relativePath" "Green"
+            Write-ColoredOutput "  Actualizado: $relativePath" "Green"
             $updatedCount++
         }
         
@@ -291,9 +307,9 @@ function Save-VersionInfo {
 # ============================================================================
 
 function Main {
-    Write-ColoredOutput "`n╔════════════════════════════════════════════════════╗" "Cyan"
-    Write-ColoredOutput "║   ACTUALIZACIÓN AUTOMÁTICA - SISTEMA DE BACKUP    ║" "Cyan"
-    Write-ColoredOutput "╚════════════════════════════════════════════════════╝`n" "Cyan"
+    Write-ColoredOutput "`n========================================================" "Cyan"
+    Write-ColoredOutput "  ACTUALIZACION AUTOMATICA - SISTEMA DE BACKUP" "Cyan"
+    Write-ColoredOutput "========================================================`n" "Cyan"
     
     # Verificar conexión a Internet
     Write-ColoredOutput "Verificando conexión a Internet..." "Cyan"
@@ -377,9 +393,9 @@ function Main {
         Cleanup-TempFiles
         
         # Mensaje final
-        Write-ColoredOutput "`n╔════════════════════════════════════════════════════╗" "Green"
-        Write-ColoredOutput "║     ✓ ACTUALIZACIÓN COMPLETADA EXITOSAMENTE       ║" "Green"
-        Write-ColoredOutput "╚════════════════════════════════════════════════════╝`n" "Green"
+        Write-ColoredOutput "`n========================================================" "Green"
+        Write-ColoredOutput "  ACTUALIZACION COMPLETADA EXITOSAMENTE" "Green"
+        Write-ColoredOutput "========================================================`n" "Green"
         Write-ColoredOutput "Versión instalada: $($releaseInfo.Version)" "White"
         
         if (Test-Path $BackupConfigDir) {
