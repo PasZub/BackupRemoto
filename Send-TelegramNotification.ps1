@@ -188,10 +188,12 @@ function Send-TelegramMessage {
         try {
             $Uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"
             
+            # Codificar el mensaje correctamente para evitar problemas con saltos de línea
             $Body = @{
                 chat_id = $TELEGRAM_CHAT_ID
                 text = $Text
-            }
+                parse_mode = "HTML"
+            } | ConvertTo-Json -Compress
             
             if ($attempt -eq 1) {
                 Write-Output "Enviando mensaje a Telegram..." "Cyan"
@@ -199,8 +201,10 @@ function Send-TelegramMessage {
                 Write-Output "Reintentando envío de mensaje (intento $attempt)..." "Yellow"
             }
             
-            # Usar Invoke-WebRequest en lugar de Invoke-RestMethod para mejor control de errores
-            $Response = Invoke-WebRequest -Uri $Uri -Method Post -Body $Body -ContentType "application/x-www-form-urlencoded" -UseBasicParsing
+            # Preparar headers para JSON
+            
+            # Usar Invoke-WebRequest con JSON para evitar error 400 con saltos de línea
+            $Response = Invoke-WebRequest -Uri $Uri -Method Post -Body $Body -ContentType "application/json; charset=utf-8" -UseBasicParsing
             
             if ($Response.StatusCode -eq 200) {
                 $JsonResponse = $Response.Content | ConvertFrom-Json
@@ -406,7 +410,7 @@ function Send-TelegramFile {
                     
                     # Leer archivo y agregarlo
                     $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
-                    $fileContent = New-Object System.Net.Http.ByteArrayContent($fileBytes)
+                    $fileContent = New-Object System.Net.Http.ByteArrayContent -ArgumentList @(,$fileBytes)
                     $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
                     $multipartContent.Add($fileContent, "document", $fileName)
                     

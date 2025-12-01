@@ -757,15 +757,17 @@ function Get-BackupSummaryText {
         $env:COMPUTERNAME
     }
     
-    # Construir mensaje según el modelo especificado
-    $Summary = "Cliente: $cliente - Informe`n"
-    $Summary += "---------------------`n"
-    $Summary += "Fecha: $script:FechaActual`n"
-    $Summary += "Tipo: $script:TipoBackup`n"
-    $Summary += "Completado: $(Get-Date -Format 'HH:mm:ss')`n`n"
+    # Construir mensaje con saltos de línea reales para Telegram
+    # Usar [char]10 (Line Feed) que es el estándar universal
+    $nl = [char]10
+    $Summary = "Cliente: $cliente - Informe$nl"
+    $Summary += "---------------------$nl"
+    $Summary += "Fecha: $script:FechaActual$nl"
+    $Summary += "Tipo: $script:TipoBackup$nl"
+    $Summary += "Completado: $(Get-Date -Format 'HH:mm:ss')$nl$nl"
     
-    $Summary += "RESULTADOS:`n"
-    $Summary += "---------------------`n"
+    $Summary += "RESULTADOS:$nl"
+    $Summary += "---------------------$nl"
     
     # Ordenar resultados para mantener consistencia
     $orderedTasks = @("Backup Programas", "Backup Documentos", "Backup Usuarios", "Sincronizacion rclone")
@@ -784,7 +786,7 @@ function Get-BackupSummaryText {
                 $Status = "[?] DESCONOCIDO"
             }
             
-            $Summary += "• $Task`: $Status`n"
+            $Summary += "- $Task`: $Status$nl"
         }
     }
     
@@ -865,15 +867,16 @@ function Send-BackupNotification {
     }
     
     try {
-        # Crear mensaje según el resultado
+        # Crear mensaje según el resultado con saltos de línea reales
+        $nl = [char]10
         if ($Success) {
-            $Message = "[OK] BACKUP COMPLETADO EXITOSAMENTE`n`n"
+            $Message = "[OK] BACKUP COMPLETADO EXITOSAMENTE$nl$nl"
             $Message += Get-BackupSummaryText -Results $Results
             $Icon = "[OK]"
         } else {
-            $Message = "[ERROR] BACKUP COMPLETADO CON ERRORES`n`n"
+            $Message = "[ERROR] BACKUP COMPLETADO CON ERRORES$nl$nl"
             $Message += Get-BackupSummaryText -Results $Results
-            $Message += "`nRevise el archivo de log adjunto para mas detalles."
+            $Message += "$nl${nl}Revise el archivo de log adjunto para mas detalles."
             $Icon = "[ERROR]"
         }
         
