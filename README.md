@@ -32,6 +32,7 @@ El script `BackupRemoto.ps1` verifica automáticamente si hay actualizaciones di
 Los siguientes archivos **NO se sobrescribirán** durante la actualización:
 - `BackupConfig.ps1` - Tu configuración del sistema
 - `UserConfig.ps1` - Tu configuración de backups
+- `TelegramConfig.ps1` - Tus credenciales de Telegram
 
 El script creará un backup de estos archivos antes de actualizar por seguridad.
 
@@ -45,7 +46,9 @@ El script creará un backup de estos archivos antes de actualizar por seguridad.
 ### Configuración
 - **`BackupConfig.ps1`** - Configuración del sistema (rclone, WinRAR, rutas, etc.)
 - **`UserConfig.ps1`** - Configuración específica del usuario (qué respaldar)
+- **`TelegramConfig.ps1`** - Credenciales de Telegram (NO versionado)
 - **`UserConfig.ps1.example`** - Plantilla de configuración de usuario
+- **`TelegramConfig.ps1.example`** - Plantilla de configuración de Telegram
 
 ## 🚀 Configuración Inicial
 
@@ -139,7 +142,7 @@ ProgramasExclude = @("*.exe", "*.dll")
 .\Setup-Backup.ps1 -Test
 ```
 
-## � Notificaciones Telegram
+## 📋 Notificaciones Telegram
 
 El sistema incluye notificaciones automáticas via Telegram:
 
@@ -147,9 +150,31 @@ El sistema incluye notificaciones automáticas via Telegram:
 - ❌ **Backup con errores**: Resumen + archivo de log adjunto
 - 🆘 **Error crítico**: Detalles del error + log
 
-Para configurar:
-1. Editar `Send-TelegramNotification.ps1`
-2. Configurar `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`
+### Configuración de Telegram
+
+1. **Crear archivo de configuración:**
+   ```powershell
+   # Copiar plantilla
+   Copy-Item "TelegramConfig.ps1.example" "TelegramConfig.ps1"
+   
+   # Editar con tus credenciales
+   notepad TelegramConfig.ps1
+   ```
+
+2. **Obtener credenciales:**
+   - **Bot Token**: Hablar con [@BotFather](https://t.me/BotFather) en Telegram y crear un nuevo bot
+   - **Chat ID**: Enviar un mensaje al bot y visitar `https://api.telegram.org/bot<TU_BOT_TOKEN>/getUpdates`
+
+3. **Configurar:**
+   ```powershell
+   # TelegramConfig.ps1
+   return @{
+       BotToken = "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
+       ChatId = "-1001234567890"  # Para grupos empieza con -100
+   }
+   ```
+
+⚠️ **IMPORTANTE**: El archivo `TelegramConfig.ps1` NO se sube a GitHub por seguridad (está en .gitignore)
 
 ## 🗂️ Estructura de Archivos de Salida
 

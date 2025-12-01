@@ -30,14 +30,38 @@ param(
 )
 
 # ============================================================================
-# CONFIGURACIÓN - MODIFICAR ESTAS VARIABLES CON TUS DATOS
+# CARGAR CONFIGURACION DE TELEGRAM DESDE ARCHIVO EXTERNO
+# ============================================================================
+# Las credenciales se cargan desde TelegramConfig.ps1 (no versionado en Git)
 # ============================================================================
 
-# Token del bot de Telegram (obtenerlo de @BotFather)
-$TELEGRAM_BOT_TOKEN = "1734951853:AAG0yCbVnErlYSk_gTAO-RsffqTvShHeviw"
+$ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+$TelegramConfigPath = Join-Path $ScriptPath "TelegramConfig.ps1"
 
-# Chat ID donde enviar los mensajes (puede ser chat personal o grupo)
-$TELEGRAM_CHAT_ID = "-1001575024278"
+# Cargar credenciales de Telegram
+$TELEGRAM_BOT_TOKEN = $null
+$TELEGRAM_CHAT_ID = $null
+
+if (Test-Path $TelegramConfigPath) {
+    try {
+        $TelegramConfig = & $TelegramConfigPath
+        $TELEGRAM_BOT_TOKEN = $TelegramConfig.BotToken
+        $TELEGRAM_CHAT_ID = $TelegramConfig.ChatId
+        
+        if (-not $Silent) {
+            Write-Verbose "Configuracion de Telegram cargada desde: $TelegramConfigPath"
+        }
+    }
+    catch {
+        Write-Host "[ERROR] Error al cargar configuracion de Telegram: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Por favor, verifica que TelegramConfig.ps1 exista y tenga el formato correcto" -ForegroundColor Yellow
+        exit 1
+    }
+} else {
+    Write-Host "[ERROR] Archivo de configuracion de Telegram no encontrado: $TelegramConfigPath" -ForegroundColor Red
+    Write-Host "Por favor, crea el archivo TelegramConfig.ps1 basado en TelegramConfig.ps1.example" -ForegroundColor Yellow
+    exit 1
+}
 
 # ============================================================================
 # NO MODIFICAR EL CÓDIGO A PARTIR DE AQUÍ
@@ -72,7 +96,6 @@ catch {
     }
 }
 
-$ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ConfigPath = Join-Path $ScriptPath "BackupConfig.ps1"
 $UserConfigPath = Join-Path $ScriptPath "UserConfig.ps1"
 

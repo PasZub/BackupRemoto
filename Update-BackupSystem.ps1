@@ -43,7 +43,8 @@ $BackupConfigDir = Join-Path $ScriptPath "Config_Backup_$(Get-Date -Format 'yyyy
 # Archivos que NO se deben sobrescribir (configuraciones del usuario)
 $ProtectedFiles = @(
     "BackupConfig.ps1",
-    "UserConfig.ps1"
+    "UserConfig.ps1",
+    "TelegramConfig.ps1"
 )
 
 # ============================================================================

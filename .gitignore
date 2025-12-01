@@ -10,6 +10,9 @@
 # Archivos de configuración de rclone
 rclone.conf
 
+# Configuración de Telegram con credenciales sensibles
+TelegramConfig.ps1
+
 # Archivos de log individuales
 *.log
 

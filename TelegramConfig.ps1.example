@@ -1,0 +1,13 @@
+# ============================================================================
+# EJEMPLO DE CONFIGURACION DE TELEGRAM
+# ============================================================================
+# Copiar este archivo como TelegramConfig.ps1 y configurar con tus datos
+# ============================================================================
+
+return @{
+    # Token del bot de Telegram (obtenerlo de @BotFather)
+    BotToken = "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz-Example"
+    
+    # Chat ID donde enviar los mensajes
+    ChatId = "-1001234567890"
+}
