@@ -793,6 +793,55 @@ function Get-BackupSummaryText {
     return $Summary
 }
 
+function Apply-PendingUpdate {
+    $flagFile = Join-Path $ScriptPath "update_pending.flag"
+    
+    if (Test-Path $flagFile) {
+        Write-ColoredOutput "[UPDATE] Aplicando actualizacion pendiente..." "Yellow"
+        Write-Log "Actualizacion pendiente detectada. Aplicando..." "INFO"
+        
+        try {
+            $updateScript = Join-Path $ScriptPath "Update-BackupSystem.ps1"
+            
+            if (Test-Path $updateScript) {
+                # Ejecutar script de actualizacion
+                & $updateScript -Force
+                
+                # Eliminar flag después de actualización exitosa
+                Remove-Item $flagFile -Force -ErrorAction SilentlyContinue
+                
+                Write-ColoredOutput "[UPDATE] Actualizacion aplicada correctamente." "Green"
+                Write-Log "Actualizacion aplicada correctamente." "SUCCESS"
+                
+                # Reiniciar el script con los mismos parámetros
+                Write-ColoredOutput "[UPDATE] Reiniciando script con nueva version..." "Yellow"
+                Write-Log "Reiniciando script con nueva version..." "INFO"
+                
+                # Recargar el script actualizado
+                $scriptPath = $PSCommandPath
+                $arguments = $PSBoundParameters.GetEnumerator() | ForEach-Object {
+                    if ($_.Value -is [switch] -and $_.Value) {
+                        "-$($_.Key)"
+                    } elseif ($_.Value -isnot [switch]) {
+                        "-$($_.Key)", $_.Value
+                    }
+                }
+                
+                & $scriptPath @arguments
+                exit
+            } else {
+                Write-ColoredOutput "[UPDATE] Error: Script de actualizacion no encontrado." "Red"
+                Write-Log "Error: Update-BackupSystem.ps1 no encontrado" "ERROR"
+                Remove-Item $flagFile -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+            Write-ColoredOutput "[UPDATE] Error aplicando actualizacion: $_" "Red"
+            Write-Log "Error aplicando actualizacion: $_" "ERROR"
+            Remove-Item $flagFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Check-ForUpdates {
     try {
         # Configuración del repositorio
@@ -839,9 +888,82 @@ function Check-ForUpdates {
             
             if ($currentVersion -ne $latestVersion -and $currentVersion -ne "Desconocida") {
                 Write-ColoredOutput "`n[ACTUALIZACION DISPONIBLE] Nueva version: $latestVersion (actual: $currentVersion)" "Yellow"
-                Write-ColoredOutput "Ejecuta '.\Update-BackupSystem.ps1' para actualizar" "Yellow"
                 Write-Log "Actualizacion disponible: $latestVersion (actual: $currentVersion)" "INFO"
+                
+                # Marcar que hay actualización pendiente para la próxima ejecución
+                $UpdatePendingFile = Join-Path $ScriptPath ".update_pending"
+                try {
+                    @{
+                        LatestVersion = $latestVersion
+                        CurrentVersion = $currentVersion
+                        DetectedAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                    } | ConvertTo-Json | Out-File -FilePath $UpdatePendingFile -Encoding UTF8 -Force
+                    
+                    Write-ColoredOutput "Actualizacion programada para la proxima ejecucion" "Cyan"
+                    Write-Log "Actualizacion pendiente marcada: $latestVersion" "INFO"
+                }
+                catch {
+                    Write-Log "Error marcando actualizacion pendiente: $($_.Exception.Message)" "WARNING"
+                }
             }
+        }
+        catch {
+            # Silenciosamente ignorar errores de verificación (sin conexión, timeout, etc)
+        }
+    }
+    catch {
+        # Silenciosamente ignorar errores de verificación
+    }
+}
+
+function Apply-PendingUpdate {
+    try {
+        $UpdatePendingFile = Join-Path $ScriptPath ".update_pending"
+        
+        if (Test-Path $UpdatePendingFile) {
+            Write-ColoredOutput "`n[ACTUALIZACION PENDIENTE DETECTADA]" "Yellow"
+            
+            try {
+                $updateInfo = Get-Content $UpdatePendingFile -Raw | ConvertFrom-Json
+                Write-ColoredOutput "Version disponible: $($updateInfo.LatestVersion)" "Cyan"
+                Write-ColoredOutput "Aplicando actualizacion..." "Cyan"
+                Write-Log "Aplicando actualizacion pendiente: $($updateInfo.LatestVersion)" "INFO"
+                
+                $UpdateScript = Join-Path $ScriptPath "Update-BackupSystem.ps1"
+                if (Test-Path $UpdateScript) {
+                    # Ejecutar actualización
+                    $UpdateProcess = Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy", "Bypass", "-File", "`"$UpdateScript`"", "-Force", "-SkipBackup" -Wait -PassThru -NoNewWindow
+                    
+                    if ($UpdateProcess.ExitCode -eq 0) {
+                        Write-ColoredOutput "[OK] Sistema actualizado exitosamente" "Green"
+                        Write-Log "Actualizacion aplicada exitosamente: $($updateInfo.LatestVersion)" "SUCCESS"
+                        
+                        # Eliminar marca de actualización pendiente
+                        Remove-Item $UpdatePendingFile -Force -ErrorAction SilentlyContinue
+                        
+                        # Salir y reiniciar el script actualizado
+                        Write-ColoredOutput "Reiniciando con version actualizada..." "Cyan"
+                        Write-Log "Reiniciando script actualizado" "INFO"
+                        
+                        # Ejecutar el script actualizado y salir de esta instancia
+                        $arguments = $MyInvocation.BoundParameters.Keys | ForEach-Object { "-$_ $($MyInvocation.BoundParameters[$_])" }
+                        Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy", "Bypass", "-File", "`"$($MyInvocation.MyCommand.Path)`"", $arguments
+                        exit 0
+                    } else {
+                        Write-ColoredOutput "[WARN] Error en actualizacion (codigo: $($UpdateProcess.ExitCode))" "Yellow"
+                        Write-ColoredOutput "Continuando con version actual..." "Yellow"
+                        Write-Log "Error en actualizacion: Codigo $($UpdateProcess.ExitCode)" "WARNING"
+                    }
+                } else {
+                    Write-ColoredOutput "[WARN] Script de actualizacion no encontrado" "Yellow"
+                    Write-Log "Script de actualizacion no encontrado" "WARNING"
+                }
+            }
+            catch {
+                Write-ColoredOutput "[WARN] Error aplicando actualizacion: $($_.Exception.Message)" "Yellow"
+                Write-Log "Error aplicando actualizacion: $($_.Exception.Message)" "WARNING"
+            }
+        }
         }
         catch {
             # Silenciosamente ignorar errores de verificación (sin conexión, timeout, etc)
@@ -946,7 +1068,10 @@ function Main {
     Write-Log "Script iniciado: $(Get-Date)" "INFO"
     Write-Log "Parámetros: Force=$Force" "INFO"
     
-    # Verificar si hay actualizaciones disponibles (no bloquea el backup)
+    # Aplicar actualizaciones pendientes ANTES del backup (si existen)
+    Apply-PendingUpdate
+    
+    # Verificar si hay actualizaciones disponibles (marca para próxima ejecución)
     Check-ForUpdates
     
     # Verificar permisos de administrador
