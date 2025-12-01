@@ -13,6 +13,9 @@ rclone.conf
 # Configuración de Telegram con credenciales sensibles
 TelegramConfig.ps1
 
+# Archivo de versión generado automáticamente
+VERSION.txt
+
 # Archivos de log individuales
 *.log
 

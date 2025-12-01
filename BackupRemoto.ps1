@@ -809,13 +809,18 @@ function Check-ForUpdates {
         # Obtener versión actual
         $versionFile = Join-Path $ScriptPath "VERSION.txt"
         $currentVersion = if (Test-Path $versionFile) {
-            (Get-Content $versionFile -Raw -ErrorAction SilentlyContinue) -replace '.*Versión:\s*(\S+).*', '$1'
+            $content = Get-Content $versionFile -Raw -ErrorAction SilentlyContinue
+            if ($content -match 'Version:\s*(\S+)') {
+                $matches[1]
+            } else {
+                "Desconocida"
+            }
         } else {
             "Desconocida"
         }
         
-        # Consultar última versión (timeout corto)
-        $apiUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
+        # Consultar última versión desde commits (más confiable que releases)
+        $apiUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/commits/master"
         
         try {
             # Timeout de 3 segundos para no retrasar el backup
@@ -829,17 +834,17 @@ function Check-ForUpdates {
             $reader.Close()
             $response.Close()
             
-            $releaseInfo = $content | ConvertFrom-Json
-            $latestVersion = $releaseInfo.tag_name
+            $commitInfo = $content | ConvertFrom-Json
+            $latestVersion = $commitInfo.sha.Substring(0, 7)  # Primeros 7 caracteres del hash
             
-            if ($currentVersion -ne $latestVersion) {
+            if ($currentVersion -ne $latestVersion -and $currentVersion -ne "Desconocida") {
                 Write-ColoredOutput "`n[ACTUALIZACION DISPONIBLE] Nueva version: $latestVersion (actual: $currentVersion)" "Yellow"
                 Write-ColoredOutput "Ejecuta '.\Update-BackupSystem.ps1' para actualizar" "Yellow"
                 Write-Log "Actualizacion disponible: $latestVersion (actual: $currentVersion)" "INFO"
             }
         }
         catch {
-            # Silenciosamente ignorar errores de verificación
+            # Silenciosamente ignorar errores de verificación (sin conexión, timeout, etc)
         }
     }
     catch {

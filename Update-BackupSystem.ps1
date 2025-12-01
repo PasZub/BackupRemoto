@@ -296,7 +296,7 @@ function Save-VersionInfo {
     
     try {
         $versionFile = Join-Path $ScriptPath "VERSION.txt"
-        "Versión: $Version`nActualizado: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $versionFile -Encoding UTF8 -Force
+        "Version: $Version`nActualizado: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File -FilePath $versionFile -Encoding UTF8 -Force
     }
     catch {
         Write-ColoredOutput "[WARN] No se pudo guardar información de versión" "Yellow"
