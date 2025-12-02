@@ -916,64 +916,6 @@ function Check-ForUpdates {
     }
 }
 
-function Apply-PendingUpdate {
-    try {
-        $UpdatePendingFile = Join-Path $ScriptPath ".update_pending"
-        
-        if (Test-Path $UpdatePendingFile) {
-            Write-ColoredOutput "`n[ACTUALIZACION PENDIENTE DETECTADA]" "Yellow"
-            
-            try {
-                $updateInfo = Get-Content $UpdatePendingFile -Raw | ConvertFrom-Json
-                Write-ColoredOutput "Version disponible: $($updateInfo.LatestVersion)" "Cyan"
-                Write-ColoredOutput "Aplicando actualizacion..." "Cyan"
-                Write-Log "Aplicando actualizacion pendiente: $($updateInfo.LatestVersion)" "INFO"
-                
-                $UpdateScript = Join-Path $ScriptPath "Update-BackupSystem.ps1"
-                if (Test-Path $UpdateScript) {
-                    # Ejecutar actualización
-                    $UpdateProcess = Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy", "Bypass", "-File", "`"$UpdateScript`"", "-Force", "-SkipBackup" -Wait -PassThru -NoNewWindow
-                    
-                    if ($UpdateProcess.ExitCode -eq 0) {
-                        Write-ColoredOutput "[OK] Sistema actualizado exitosamente" "Green"
-                        Write-Log "Actualizacion aplicada exitosamente: $($updateInfo.LatestVersion)" "SUCCESS"
-                        
-                        # Eliminar marca de actualización pendiente
-                        Remove-Item $UpdatePendingFile -Force -ErrorAction SilentlyContinue
-                        
-                        # Salir y reiniciar el script actualizado
-                        Write-ColoredOutput "Reiniciando con version actualizada..." "Cyan"
-                        Write-Log "Reiniciando script actualizado" "INFO"
-                        
-                        # Ejecutar el script actualizado y salir de esta instancia
-                        $arguments = $MyInvocation.BoundParameters.Keys | ForEach-Object { "-$_ $($MyInvocation.BoundParameters[$_])" }
-                        Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy", "Bypass", "-File", "`"$($MyInvocation.MyCommand.Path)`"", $arguments
-                        exit 0
-                    } else {
-                        Write-ColoredOutput "[WARN] Error en actualizacion (codigo: $($UpdateProcess.ExitCode))" "Yellow"
-                        Write-ColoredOutput "Continuando con version actual..." "Yellow"
-                        Write-Log "Error en actualizacion: Codigo $($UpdateProcess.ExitCode)" "WARNING"
-                    }
-                } else {
-                    Write-ColoredOutput "[WARN] Script de actualizacion no encontrado" "Yellow"
-                    Write-Log "Script de actualizacion no encontrado" "WARNING"
-                }
-            }
-            catch {
-                Write-ColoredOutput "[WARN] Error aplicando actualizacion: $($_.Exception.Message)" "Yellow"
-                Write-Log "Error aplicando actualizacion: $($_.Exception.Message)" "WARNING"
-            }
-        }
-        }
-        catch {
-            # Silenciosamente ignorar errores de verificación (sin conexión, timeout, etc)
-        }
-    }
-    catch {
-        # Silenciosamente ignorar errores de verificación
-    }
-}
-
 function Send-BackupNotification {
     param(
         [bool]$Success,
