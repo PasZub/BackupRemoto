@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Envia notificaciones y archivos de logs por Telegram
@@ -338,7 +338,7 @@ function Send-TelegramFile {
                         Write-CustomOutput "[WARN] Respuesta curl no JSON válido: $curlOutput" "Yellow"
                         # Si hay respuesta pero no es JSON válido, asumir éxito si no hay error HTTP
                         if ($curlOutput -notmatch "error|failed|HTTP") {
-                            Write-CustomOutput "[OK] Archivo probablemente enviado (respuesta no estándar)" "Green"
+                            Write-CustomOutput "[OK] Archivo probablemente enviado (respuesta no estandar)" "Green"
                             return $true
                         }
                     }
@@ -362,16 +362,16 @@ function Send-TelegramFile {
                     Write-CustomOutput "Descripción del error: $curlErrorMessage" "Red"
                 }
                 
-                # Si curl falla, intentar con método PowerShell como fallback
-                Write-CustomOutput "Curl falló, intentando con método PowerShell..." "Yellow"
+                # Si curl falla, intentar con Metodo PowerShell como fallback
+                Write-CustomOutput "Curl fallo, intentando con Metodo PowerShell..." "Yellow"
             }
             catch {
                 Write-CustomOutput "[ERROR] Excepción ejecutando curl: $($_.Exception.Message)" "Red"
-                Write-CustomOutput "Intentando con método PowerShell..." "Yellow"
+                Write-CustomOutput "Intentando con Metodo PowerShell..." "Yellow"
             }
         }
-        # Método PowerShell mejorado como fallback o método principal
-        Write-CustomOutput "Usando método PowerShell nativo..." "Gray"
+        # Metodo PowerShell mejorado como fallback o Metodo principal
+        Write-CustomOutput "Usando Metodo PowerShell nativo..." "Gray"
         
         $maxRetries = 3
         $retryDelay = 3
@@ -389,7 +389,7 @@ function Send-TelegramFile {
                 $uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
                 $fileName = Split-Path $FilePath -Leaf
                 
-                # Método simplificado usando Add-Type para formularios multipart
+                # Metodo simplificado usando Add-Type para formularios multipart
                 Add-Type -AssemblyName System.Net.Http
                 
                 $httpClient = New-Object System.Net.Http.HttpClient
@@ -528,23 +528,25 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
                 
                 Write-CustomOutput "Creando copia temporal: $tempFileName" "Gray"
                 
-                # Intentar copiar el archivo con diferentes métodos
+                # Intentar copiar el archivo con diferentes Metodos
                 if ($retryCount -eq 0) {
-                    # Método 1: Copy-Item estándar
+                    # Metodo 1: Copy-Item estandar
                     Copy-Item -Path $LogPath -Destination $tempLogPath -Force
                 } elseif ($retryCount -eq 1) {
-                    # Método 2: Leer contenido y escribir a nuevo archivo
+                    # Metodo 2: Leer contenido y escribir a nuevo archivo
                     $logContent = Get-Content -Path $LogPath -Raw -ErrorAction Stop
                     $logContent | Out-File -FilePath $tempLogPath -Encoding UTF8 -Force
                 } else {
-                    # Método 3: Usar robocopy para archivos bloqueados
+                    # Metodo 3: Usar robocopy para archivos bloqueados
                     $sourceDir = Split-Path $LogPath -Parent
                     $sourceFile = Split-Path $LogPath -Leaf
                     $tempDir = Split-Path $tempLogPath -Parent
                     
-                    $robocopyResult = robocopy.exe $sourceDir $tempDir $sourceFile /R:1 /W:1 /NP /NDL /NJH /NJS
+                    $null = robocopy.exe $sourceDir $tempDir $sourceFile /R:1 /W:1 /NP /NDL /NJH /NJS
+                    # Robocopy exit codes: 0-7 son exito, >7 es error
+                    $robocopySuccess = ($LASTEXITCODE -lt 8)
                     
-                    if (Test-Path $tempLogPath) {
+                    if ((Test-Path $tempLogPath) -and $robocopySuccess) {
                         # Renombrar el archivo copiado por robocopy
                         $robocopyFile = Join-Path $tempDir $sourceFile
                         if (Test-Path $robocopyFile -and $robocopyFile -ne $tempLogPath) {
@@ -553,16 +555,15 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
                     }
                 }
                 
-                # Verificar que la copia se creó correctamente
+                # Verificar que la copia se creo correctamente
                 if (Test-Path $tempLogPath) {
-                    $originalSize = (Get-Item $LogPath).Length
                     $tempSize = (Get-Item $tempLogPath).Length
                     
                     if ($tempSize -gt 0) {
                         Write-CustomOutput "[OK] Copia temporal creada: $([math]::Round($tempSize/1KB, 1))KB" "Green"
                         $copySuccess = $true
                     } else {
-                        Write-CustomOutput "[WARN] Copia temporal vacía, reintentando..." "Yellow"
+                        Write-CustomOutput "[WARN] Copia temporal vacia, reintentando..." "Yellow"
                         Remove-Item $tempLogPath -Force -ErrorAction SilentlyContinue
                     }
                 } else {
