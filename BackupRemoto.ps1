@@ -952,46 +952,44 @@ function Send-BackupNotification {
         Write-ColoredOutput "Enviando notificación: $Icon Backup $(if($Success){'exitoso'}else{'con errores'})" "Cyan"
         Write-Log "Enviando notificación de backup $(if($Success){'exitoso'}else{'con errores'})" "INFO"
         
-        # Ejecutar script de notificación
+        # Ejecutar script de notificación directamente
         Write-Log "Ejecutando script de notificación de Telegram" "INFO"
         
-        # Crear archivo temporal para el mensaje (para evitar problemas con caracteres especiales)
-        $TempMessageFile = Join-Path $env:TEMP "backup_message_$(Get-Random).txt"
-        $Message | Out-File -FilePath $TempMessageFile -Encoding UTF8
-        
         try {
-            # Preparar argumentos de forma más segura
-            $ProcessArgs = @(
-                "-ExecutionPolicy", "Bypass", 
-                "-File", "`"$NotificationScript`"",
-                "-Message", "`"$Message`""
-            )
-            
             # Si hay errores y existe el log del día, adjuntarlo
+            $output = $null
             if (-not $Success -and (Test-Path $LogFilePath)) {
-                $ProcessArgs += "-LogPath"
-                $ProcessArgs += "`"$LogFilePath`""
                 Write-ColoredOutput "Adjuntando log del día: $(Split-Path $LogFilePath -Leaf)" "Gray"
                 Write-Log "Adjuntando archivo de log: $LogFilePath" "INFO"
+                $output = & $NotificationScript -Message $Message -LogPath $LogFilePath 2>&1
+            } else {
+                $output = & $NotificationScript -Message $Message 2>&1
             }
             
-            Write-Log "Argumentos del proceso: $($ProcessArgs -join ' ')" "INFO"
+            # Mostrar la salida del script de notificación
+            if ($output) {
+                $output | ForEach-Object {
+                    if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                        Write-ColoredOutput "[ERROR] $_" "Red"
+                        Write-Log "Error en notificación: $_" "ERROR"
+                    } else {
+                        Write-ColoredOutput $_ "Gray"
+                    }
+                }
+            }
             
-            $NotificationProcess = Start-Process -FilePath "powershell.exe" -ArgumentList $ProcessArgs -Wait -PassThru -NoNewWindow
-            
-            if ($NotificationProcess.ExitCode -eq 0) {
+            # Verificar si el proceso fue exitoso (exit code implícito)
+            if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
                 Write-ColoredOutput "[OK] Notificación enviada exitosamente" "Green"
                 Write-Log "Notificación de Telegram enviada exitosamente" "SUCCESS"
             } else {
-                Write-ColoredOutput "[WARN] Error enviando notificación: Código $($NotificationProcess.ExitCode)" "Yellow"
-                Write-Log "Error enviando notificación de Telegram: Código $($NotificationProcess.ExitCode)" "WARNING"
+                Write-ColoredOutput "[WARN] Notificación completada con advertencias (código: $LASTEXITCODE)" "Yellow"
+                Write-Log "Notificación completada con advertencias (código: $LASTEXITCODE)" "WARNING"
             }
         }
-        finally {
-            # Limpiar archivo temporal
-            if (Test-Path $TempMessageFile) {
-                Remove-Item $TempMessageFile -ErrorAction SilentlyContinue
-            }
+        catch {
+            Write-ColoredOutput "[WARN] Error ejecutando notificación: $($_.Exception.Message)" "Yellow"
+            Write-Log "Error ejecutando notificación de Telegram: $($_.Exception.Message)" "WARNING"
         }
     }
     catch {

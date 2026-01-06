@@ -145,7 +145,7 @@ if (-not $Config.ContainsKey('Usuario') -or [string]::IsNullOrEmpty($Config.Usua
     $Config['Usuario'] = $env:USERNAME
 }
 
-function Write-Output {
+function Write-CustomOutput {
     param([string]$Message, [string]$Color = "White")
     if (-not $Silent) {
         # Asegurar codificación UTF-8 correcta para la consola
@@ -157,18 +157,20 @@ function Write-Output {
         }
         Write-Host $Message -ForegroundColor $Color
     }
+    # Siempre escribir al output stream para que el script padre pueda capturarlo
+    Write-CustomOutput $Message
 }
 
 function Send-TelegramMessage {
     param([string]$Text)
     
     if ([string]::IsNullOrEmpty($TELEGRAM_BOT_TOKEN) -or $TELEGRAM_BOT_TOKEN -eq "TU_BOT_TOKEN_AQUI") {
-        Write-Output "[ERROR] Token de Telegram no configurado" "Red"
+        Write-CustomOutput "[ERROR] Token de Telegram no configurado" "Red"
         return $false
     }
     
     if ([string]::IsNullOrEmpty($TELEGRAM_CHAT_ID) -or $TELEGRAM_CHAT_ID -eq "TU_CHAT_ID_AQUI") {
-        Write-Output "[ERROR] Chat ID de Telegram no configurado" "Red"
+        Write-CustomOutput "[ERROR] Chat ID de Telegram no configurado" "Red"
         return $false
     }
     
@@ -178,7 +180,7 @@ function Send-TelegramMessage {
         [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     }
     catch {
-        Write-Output "[WARN] No se pudo configurar TLS: $($_.Exception.Message)" "Yellow"
+        Write-CustomOutput "[WARN] No se pudo configurar TLS: $($_.Exception.Message)" "Yellow"
     }
     
     $maxRetries = 3
@@ -196,9 +198,9 @@ function Send-TelegramMessage {
             } | ConvertTo-Json -Compress
             
             if ($attempt -eq 1) {
-                Write-Output "Enviando mensaje a Telegram..." "Cyan"
+                Write-CustomOutput "Enviando mensaje a Telegram..." "Cyan"
             } else {
-                Write-Output "Reintentando envío de mensaje (intento $attempt)..." "Yellow"
+                Write-CustomOutput "Reintentando envío de mensaje (intento $attempt)..." "Yellow"
             }
             
             # Preparar headers para JSON
@@ -209,16 +211,16 @@ function Send-TelegramMessage {
             if ($Response.StatusCode -eq 200) {
                 $JsonResponse = $Response.Content | ConvertFrom-Json
                 if ($JsonResponse.ok) {
-                    Write-Output "[OK] Mensaje enviado exitosamente" "Green"
+                    Write-CustomOutput "[OK] Mensaje enviado exitosamente" "Green"
                     return $true
                 } else {
-                    Write-Output "[ERROR] Error enviando mensaje: $($JsonResponse.description)" "Red"
+                    Write-CustomOutput "[ERROR] Error enviando mensaje: $($JsonResponse.description)" "Red"
                     return $false
                 }
             } else {
-                Write-Output "[ERROR] Error HTTP: $($Response.StatusCode)" "Red"
+                Write-CustomOutput "[ERROR] Error HTTP: $($Response.StatusCode)" "Red"
                 if ($attempt -lt $maxRetries) {
-                    Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
+                    Write-CustomOutput "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
                     Start-Sleep -Seconds $retryDelay
                     continue
                 }
@@ -226,13 +228,13 @@ function Send-TelegramMessage {
             }
         }
         catch {
-            Write-Output "[ERROR] Excepción enviando mensaje (intento $attempt): $($_.Exception.Message)" "Red"
+            Write-CustomOutput "[ERROR] Excepción enviando mensaje (intento $attempt): $($_.Exception.Message)" "Red"
             
             if ($attempt -lt $maxRetries) {
-                Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
+                Write-CustomOutput "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
                 Start-Sleep -Seconds $retryDelay
             } else {
-                Write-Output "[ERROR] Error después de $maxRetries intentos" "Red"
+                Write-CustomOutput "[ERROR] Error después de $maxRetries intentos" "Red"
                 return $false
             }
         }
@@ -245,17 +247,17 @@ function Send-TelegramFile {
     param([string]$FilePath, [string]$Caption = "")
     
     if ([string]::IsNullOrEmpty($TELEGRAM_BOT_TOKEN) -or $TELEGRAM_BOT_TOKEN -eq "TU_BOT_TOKEN_AQUI") {
-        Write-Output "[ERROR] Token de Telegram no configurado" "Red"
+        Write-CustomOutput "[ERROR] Token de Telegram no configurado" "Red"
         return $false
     }
     
     if ([string]::IsNullOrEmpty($TELEGRAM_CHAT_ID) -or $TELEGRAM_CHAT_ID -eq "TU_CHAT_ID_AQUI") {
-        Write-Output "[ERROR] Chat ID de Telegram no configurado" "Red"
+        Write-CustomOutput "[ERROR] Chat ID de Telegram no configurado" "Red"
         return $false
     }
     
     if (-not (Test-Path $FilePath)) {
-        Write-Output "[ERROR] Archivo no encontrado: $FilePath" "Red"
+        Write-CustomOutput "[ERROR] Archivo no encontrado: $FilePath" "Red"
         return $false
     }
     
@@ -265,7 +267,7 @@ function Send-TelegramFile {
         [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     }
     catch {
-        Write-Output "[WARN] No se pudo configurar TLS: $($_.Exception.Message)" "Yellow"
+        Write-CustomOutput "[WARN] No se pudo configurar TLS: $($_.Exception.Message)" "Yellow"
     }
     
     try {
@@ -274,17 +276,17 @@ function Send-TelegramFile {
         $MaxSize = 50MB
         
         if ($FileSize -gt $MaxSize) {
-            Write-Output "[ERROR] Archivo demasiado grande: $([math]::Round($FileSize/1MB, 2))MB (maximo: 50MB)" "Red"
+            Write-CustomOutput "[ERROR] Archivo demasiado grande: $([math]::Round($FileSize/1MB, 2))MB (maximo: 50MB)" "Red"
             return $false
         }
         
-        Write-Output "Enviando archivo a Telegram: $(Split-Path $FilePath -Leaf)" "Cyan"
-        Write-Output "Tamano: $([math]::Round($FileSize/1KB, 2))KB" "Gray"
+        Write-CustomOutput "Enviando archivo a Telegram: $(Split-Path $FilePath -Leaf)" "Cyan"
+        Write-CustomOutput "Tamano: $([math]::Round($FileSize/1KB, 2))KB" "Gray"
         
         # Usar metodo alternativo con curl si esta disponible
         $curlPath = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
         if ($curlPath) {
-            Write-Output "Usando curl para envio..." "Gray"
+            Write-CustomOutput "Usando curl para envio..." "Gray"
             
             $Uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument"
             $fileName = Split-Path $FilePath -Leaf
@@ -314,37 +316,37 @@ function Send-TelegramFile {
             
             # Ejecutar curl con captura de error mejorada
             try {
-                Write-Output "Ejecutando: curl $($curlArgs -join ' ')" "Gray"
+                Write-CustomOutput "Ejecutando: curl $($curlArgs -join ' ')" "Gray"
                 
                 # Ejecutar curl y capturar tanto salida como error
                 $curlOutput = & $curlPath $curlArgs 2>&1
                 $curlExitCode = $LASTEXITCODE
                 
-                Write-Output "Codigo de salida curl: $curlExitCode" "Gray"
+                Write-CustomOutput "Codigo de salida curl: $curlExitCode" "Gray"
                 
                 if ($curlExitCode -eq 0) {
                     # Parsear respuesta JSON
                     try {
                         $response = $curlOutput | Where-Object { $_ -match '^\{.*\}$' } | ConvertFrom-Json
                         if ($response.ok) {
-                            Write-Output "[OK] Archivo enviado exitosamente via curl" "Green"
+                            Write-CustomOutput "[OK] Archivo enviado exitosamente via curl" "Green"
                             return $true
                         } else {
-                            Write-Output "[ERROR] Error en respuesta Telegram: $($response.description)" "Red"
-                            Write-Output "Respuesta completa: $curlOutput" "Gray"
+                            Write-CustomOutput "[ERROR] Error en respuesta Telegram: $($response.description)" "Red"
+                            Write-CustomOutput "Respuesta completa: $curlOutput" "Gray"
                         }
                     }
                     catch {
-                        Write-Output "[WARN] Respuesta curl no JSON válido: $curlOutput" "Yellow"
+                        Write-CustomOutput "[WARN] Respuesta curl no JSON válido: $curlOutput" "Yellow"
                         # Si hay respuesta pero no es JSON válido, asumir éxito si no hay error HTTP
                         if ($curlOutput -notmatch "error|failed|HTTP") {
-                            Write-Output "[OK] Archivo probablemente enviado (respuesta no estándar)" "Green"
+                            Write-CustomOutput "[OK] Archivo probablemente enviado (respuesta no estándar)" "Green"
                             return $true
                         }
                     }
                 } else {
-                    Write-Output "[ERROR] Error ejecutando curl: codigo $curlExitCode" "Red"
-                    Write-Output "Salida de error curl: $curlOutput" "Red"
+                    Write-CustomOutput "[ERROR] Error ejecutando curl: codigo $curlExitCode" "Red"
+                    Write-CustomOutput "Salida de error curl: $curlOutput" "Red"
                     
                     # Códigos de error curl más comunes y sus significados
                     $curlErrorMessage = switch ($curlExitCode) {
@@ -359,19 +361,19 @@ function Send-TelegramFile {
                         77 { "Error SSL CA cert (path? access rights?)" }
                         default { "Error desconocido" }
                     }
-                    Write-Output "Descripción del error: $curlErrorMessage" "Red"
+                    Write-CustomOutput "Descripción del error: $curlErrorMessage" "Red"
                 }
                 
                 # Si curl falla, intentar con método PowerShell como fallback
-                Write-Output "Curl falló, intentando con método PowerShell..." "Yellow"
+                Write-CustomOutput "Curl falló, intentando con método PowerShell..." "Yellow"
             }
             catch {
-                Write-Output "[ERROR] Excepción ejecutando curl: $($_.Exception.Message)" "Red"
-                Write-Output "Intentando con método PowerShell..." "Yellow"
+                Write-CustomOutput "[ERROR] Excepción ejecutando curl: $($_.Exception.Message)" "Red"
+                Write-CustomOutput "Intentando con método PowerShell..." "Yellow"
             }
         }
         # Método PowerShell mejorado como fallback o método principal
-        Write-Output "Usando método PowerShell nativo..." "Gray"
+        Write-CustomOutput "Usando método PowerShell nativo..." "Gray"
         
         $maxRetries = 3
         $retryDelay = 3
@@ -379,7 +381,7 @@ function Send-TelegramFile {
         for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
             try {
                 if ($attempt -gt 1) {
-                    Write-Output "Reintentando envío de archivo (intento $attempt)..." "Yellow"
+                    Write-CustomOutput "Reintentando envío de archivo (intento $attempt)..." "Yellow"
                 }
                 
                 # Configurar protocolo de seguridad
@@ -415,7 +417,7 @@ function Send-TelegramFile {
                     $multipartContent.Add($fileContent, "document", $fileName)
                     
                     # Enviar request
-                    Write-Output "Enviando archivo usando HttpClient..." "Gray"
+                    Write-CustomOutput "Enviando archivo usando HttpClient..." "Gray"
                     $response = $httpClient.PostAsync($uri, $multipartContent).Result
                     
                     if ($response.IsSuccessStatusCode) {
@@ -423,13 +425,13 @@ function Send-TelegramFile {
                         $jsonResponse = $responseContent | ConvertFrom-Json
                         
                         if ($jsonResponse.ok) {
-                            Write-Output "[OK] Archivo enviado exitosamente via PowerShell" "Green"
+                            Write-CustomOutput "[OK] Archivo enviado exitosamente via PowerShell" "Green"
                             return $true
                         } else {
-                            Write-Output "[ERROR] Error en respuesta Telegram: $($jsonResponse.description)" "Red"
+                            Write-CustomOutput "[ERROR] Error en respuesta Telegram: $($jsonResponse.description)" "Red"
                         }
                     } else {
-                        Write-Output "[ERROR] Error HTTP: $($response.StatusCode) - $($response.ReasonPhrase)" "Red"
+                        Write-CustomOutput "[ERROR] Error HTTP: $($response.StatusCode) - $($response.ReasonPhrase)" "Red"
                     }
                 }
                 finally {
@@ -439,16 +441,16 @@ function Send-TelegramFile {
                 }
             }
             catch {
-                Write-Output "[ERROR] Excepción enviando archivo (intento $attempt): $($_.Exception.Message)" "Red"
+                Write-CustomOutput "[ERROR] Excepción enviando archivo (intento $attempt): $($_.Exception.Message)" "Red"
                 if ($_.Exception.InnerException) {
-                    Write-Output "Error interno: $($_.Exception.InnerException.Message)" "Red"
+                    Write-CustomOutput "Error interno: $($_.Exception.InnerException.Message)" "Red"
                 }
                 
                 if ($attempt -lt $maxRetries) {
-                    Write-Output "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
+                    Write-CustomOutput "Esperando $retryDelay segundos antes del siguiente intento..." "Gray"
                     Start-Sleep -Seconds $retryDelay
                 } else {
-                    Write-Output "[ERROR] Error después de $maxRetries intentos con PowerShell" "Red"
+                    Write-CustomOutput "[ERROR] Error después de $maxRetries intentos con PowerShell" "Red"
                 }
             }
         }
@@ -456,7 +458,7 @@ function Send-TelegramFile {
         return $false
     }
     catch {
-        Write-Output "[ERROR] Excepcion enviando archivo: $($_.Exception.Message)" "Red"
+        Write-CustomOutput "[ERROR] Excepcion enviando archivo: $($_.Exception.Message)" "Red"
         return $false
     }
 }
@@ -465,28 +467,28 @@ function Send-TelegramFile {
 # SCRIPT PRINCIPAL
 # ============================================================================
 
-Write-Output "`n=== NOTIFICACION TELEGRAM ===" "Yellow"
+Write-CustomOutput "`n=== NOTIFICACION TELEGRAM ===" "Yellow"
 
 # Diagnostico basico de conectividad (solo si no es modo silencioso)
 if (-not $Silent) {
-    Write-Output "Verificando conectividad..." "Gray"
+    Write-CustomOutput "Verificando conectividad..." "Gray"
     try {
         $telegramHost = "api.telegram.org"
         $pingResult = Test-NetConnection -ComputerName $telegramHost -Port 443 -InformationLevel Quiet -ErrorAction SilentlyContinue
         if ($pingResult) {
-            Write-Output "[OK] Conectividad a ${telegramHost}: disponible" "Green"
+            Write-CustomOutput "[OK] Conectividad a ${telegramHost}: disponible" "Green"
         } else {
-            Write-Output "[WARN] Conectividad a ${telegramHost}: limitada o bloqueada" "Yellow"
-            Write-Output "Esto puede indicar problemas de firewall, proxy o DNS" "Yellow"
+            Write-CustomOutput "[WARN] Conectividad a ${telegramHost}: limitada o bloqueada" "Yellow"
+            Write-CustomOutput "Esto puede indicar problemas de firewall, proxy o DNS" "Yellow"
         }
     }
     catch {
-        Write-Output "[WARN] No se pudo verificar conectividad: $($_.Exception.Message)" "Yellow"
+        Write-CustomOutput "[WARN] No se pudo verificar conectividad: $($_.Exception.Message)" "Yellow"
     }
     
     # Verificar version de PowerShell
-    Write-Output "PowerShell version: $($PSVersionTable.PSVersion)" "Gray"
-    Write-Output "SO: $($PSVersionTable.OS)" "Gray"
+    Write-CustomOutput "PowerShell version: $($PSVersionTable.PSVersion)" "Gray"
+    Write-CustomOutput "SO: $($PSVersionTable.OS)" "Gray"
 }
 
 $Success = $true
@@ -512,7 +514,7 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
         
         $caption = "Log: $logFileName - Sistema: $systemName"
         
-        Write-Output "Preparando log para envio..." "Cyan"
+        Write-CustomOutput "Preparando log para envio..." "Cyan"
         
         # Crear copia temporal del log para evitar problemas de archivo en uso
         $tempLogPath = $null
@@ -526,7 +528,7 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
                 $tempFileName = "TelegramLog_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(Get-Random -Maximum 9999).log"
                 $tempLogPath = Join-Path $env:TEMP $tempFileName
                 
-                Write-Output "Creando copia temporal: $tempFileName" "Gray"
+                Write-CustomOutput "Creando copia temporal: $tempFileName" "Gray"
                 
                 # Intentar copiar el archivo con diferentes métodos
                 if ($retryCount -eq 0) {
@@ -559,18 +561,18 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
                     $tempSize = (Get-Item $tempLogPath).Length
                     
                     if ($tempSize -gt 0) {
-                        Write-Output "[OK] Copia temporal creada: $([math]::Round($tempSize/1KB, 1))KB" "Green"
+                        Write-CustomOutput "[OK] Copia temporal creada: $([math]::Round($tempSize/1KB, 1))KB" "Green"
                         $copySuccess = $true
                     } else {
-                        Write-Output "[WARN] Copia temporal vacía, reintentando..." "Yellow"
+                        Write-CustomOutput "[WARN] Copia temporal vacía, reintentando..." "Yellow"
                         Remove-Item $tempLogPath -Force -ErrorAction SilentlyContinue
                     }
                 } else {
-                    Write-Output "[WARN] No se pudo crear copia temporal, reintentando..." "Yellow"
+                    Write-CustomOutput "[WARN] No se pudo crear copia temporal, reintentando..." "Yellow"
                 }
             }
             catch {
-                Write-Output "[WARN] Error creando copia temporal (intento $($retryCount + 1)): $($_.Exception.Message)" "Yellow"
+                Write-CustomOutput "[WARN] Error creando copia temporal (intento $($retryCount + 1)): $($_.Exception.Message)" "Yellow"
                 if ($tempLogPath -and (Test-Path $tempLogPath)) {
                     Remove-Item $tempLogPath -Force -ErrorAction SilentlyContinue
                 }
@@ -579,7 +581,7 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
             if (-not $copySuccess) {
                 $retryCount++
                 if ($retryCount -lt $maxRetries) {
-                    Write-Output "Esperando 2 segundos antes del siguiente intento..." "Gray"
+                    Write-CustomOutput "Esperando 2 segundos antes del siguiente intento..." "Gray"
                     Start-Sleep -Seconds 2
                 }
             }
@@ -587,7 +589,7 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
         
         # Intentar enviar el archivo
         if ($copySuccess -and $tempLogPath -and (Test-Path $tempLogPath)) {
-            Write-Output "Enviando copia temporal del log..." "Cyan"
+            Write-CustomOutput "Enviando copia temporal del log..." "Cyan"
             
             if (-not (Send-TelegramFile -FilePath $tempLogPath -Caption $caption)) {
                 $Success = $false
@@ -596,39 +598,39 @@ if (-not [string]::IsNullOrEmpty($LogPath)) {
             # Limpiar archivo temporal
             try {
                 Remove-Item $tempLogPath -Force -ErrorAction SilentlyContinue
-                Write-Output "Copia temporal eliminada" "Gray"
+                Write-CustomOutput "Copia temporal eliminada" "Gray"
             }
             catch {
-                Write-Output "[WARN] No se pudo eliminar copia temporal: $tempLogPath" "Yellow"
+                Write-CustomOutput "[WARN] No se pudo eliminar copia temporal: $tempLogPath" "Yellow"
             }
         } else {
-            Write-Output "[ERROR] No se pudo crear copia temporal del log después de $maxRetries intentos" "Red"
+            Write-CustomOutput "[ERROR] No se pudo crear copia temporal del log después de $maxRetries intentos" "Red"
             
             # Como último recurso, intentar enviar el archivo original
-            Write-Output "Intentando enviar archivo original como último recurso..." "Yellow"
+            Write-CustomOutput "Intentando enviar archivo original como último recurso..." "Yellow"
             
             try {
                 if (-not (Send-TelegramFile -FilePath $LogPath -Caption $caption)) {
                     $Success = $false
-                    Write-Output "[ERROR] Tampoco se pudo enviar el archivo original" "Red"
+                    Write-CustomOutput "[ERROR] Tampoco se pudo enviar el archivo original" "Red"
                 }
             }
             catch {
-                Write-Output "[ERROR] Error enviando archivo original: $($_.Exception.Message)" "Red"
+                Write-CustomOutput "[ERROR] Error enviando archivo original: $($_.Exception.Message)" "Red"
                 $Success = $false
             }
         }
     } else {
-        Write-Output "[ERROR] Archivo de log no encontrado: $LogPath" "Red"
+        Write-CustomOutput "[ERROR] Archivo de log no encontrado: $LogPath" "Red"
         $Success = $false
     }
 }
 
 # Mostrar resultado final
 if ($Success) {
-    Write-Output "`n[OK] Notificacion completada exitosamente" "Green"
+    Write-CustomOutput "`n[OK] Notificacion completada exitosamente" "Green"
     exit 0
 } else {
-    Write-Output "`n[ERROR] Errores durante el envio de notificacion" "Red"
+    Write-CustomOutput "`n[ERROR] Errores durante el envio de notificacion" "Red"
     exit 1
 }
