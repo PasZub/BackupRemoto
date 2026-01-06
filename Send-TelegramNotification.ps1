@@ -148,17 +148,15 @@ if (-not $Config.ContainsKey('Usuario') -or [string]::IsNullOrEmpty($Config.Usua
 function Write-CustomOutput {
     param([string]$Message, [string]$Color = "White")
     if (-not $Silent) {
-        # Asegurar codificación UTF-8 correcta para la consola
+        # Asegurar codificacion UTF-8 correcta para la consola
         try {
             [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         }
         catch {
-            # Si no se puede cambiar la codificación, continuar normalmente
+            # Si no se puede cambiar la codificacion, continuar normalmente
         }
         Write-Host $Message -ForegroundColor $Color
     }
-    # Siempre escribir al output stream para que el script padre pueda capturarlo
-    Write-CustomOutput $Message
 }
 
 function Send-TelegramMessage {

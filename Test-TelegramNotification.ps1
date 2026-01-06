@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Script de diagnóstico para notificaciones Telegram en Windows Server
+    Script de diagnostico para notificaciones Telegram en Windows Server
 
 .DESCRIPTION
-    Prueba la conectividad y configuración de Telegram paso a paso
+    Prueba la conectividad y configuracion de Telegram paso a paso
 #>
 
 param(
@@ -14,13 +14,13 @@ param(
 $ErrorActionPreference = "Continue"
 $ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-Write-Host "`n=== DIAGNÓSTICO TELEGRAM PARA WINDOWS SERVER ===" -ForegroundColor Cyan
+Write-Host "`n=== DIAGNOSTICO TELEGRAM PARA WINDOWS SERVER ===" -ForegroundColor Cyan
 Write-Host "Fecha: $(Get-Date)" -ForegroundColor Gray
 Write-Host ""
 
 # 1. Verificar PowerShell
-Write-Host "[1] Verificando versión de PowerShell..." -ForegroundColor Yellow
-Write-Host "    Versión: $($PSVersionTable.PSVersion)" -ForegroundColor Green
+Write-Host "[1] Verificando version de PowerShell..." -ForegroundColor Yellow
+Write-Host "    Version: $($PSVersionTable.PSVersion)" -ForegroundColor Green
 Write-Host "    SO: $($PSVersionTable.OS)" -ForegroundColor Green
 Write-Host ""
 
@@ -49,8 +49,8 @@ if (-not $allFilesOk) {
 }
 Write-Host ""
 
-# 3. Cargar y validar configuración
-Write-Host "[3] Cargando configuración de Telegram..." -ForegroundColor Yellow
+# 3. Cargar y validar configuracion
+Write-Host "[3] Cargando configuracion de Telegram..." -ForegroundColor Yellow
 
 try {
     $TelegramConfigPath = Join-Path $ScriptPath "TelegramConfig.ps1"
@@ -58,7 +58,7 @@ try {
     $TELEGRAM_BOT_TOKEN = $TelegramConfig.BotToken
     $TELEGRAM_CHAT_ID = $TelegramConfig.ChatId
     
-    Write-Host "    [OK] Configuración cargada" -ForegroundColor Green
+    Write-Host "    [OK] Configuracion cargada" -ForegroundColor Green
     
     # Validar credenciales
     if ([string]::IsNullOrEmpty($TELEGRAM_BOT_TOKEN) -or $TELEGRAM_BOT_TOKEN -eq "TU_BOT_TOKEN_AQUI") {
@@ -77,7 +77,7 @@ try {
     }
 }
 catch {
-    Write-Host "    [ERROR] Error cargando configuración: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "    [ERROR] Error cargando configuracion: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
 Write-Host ""
@@ -86,7 +86,7 @@ Write-Host ""
 Write-Host "[4] Verificando conectividad a Internet..." -ForegroundColor Yellow
 
 $testHosts = @(
-    @{Host = "8.8.8.8"; Port = 443; Name = "Google DNS (genérico)"},
+    @{Host = "8.8.8.8"; Port = 443; Name = "Google DNS generico"},
     @{Host = "api.telegram.org"; Port = 443; Name = "Telegram API"}
 )
 
@@ -106,7 +106,7 @@ foreach ($test in $testHosts) {
 }
 Write-Host ""
 
-# 5. Verificar configuración SSL/TLS
+# 5. Verificar configuracion SSL/TLS
 Write-Host "[5] Configurando SSL/TLS..." -ForegroundColor Yellow
 
 try {
@@ -121,7 +121,7 @@ catch {
 Write-Host ""
 
 # 6. Probar API de Telegram con getMe
-Write-Host "[6] Probando conexión con API de Telegram..." -ForegroundColor Yellow
+Write-Host "[6] Probando conexion con API de Telegram..." -ForegroundColor Yellow
 
 try {
     $uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getMe"
@@ -156,7 +156,8 @@ Write-Host ""
 Write-Host "[7] Enviando mensaje de prueba..." -ForegroundColor Yellow
 
 try {
-    $testMessage = "[TEST] Prueba de notificacion desde Windows Server`nFecha: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    $nl = [char]10
+    $testMessage = "[TEST] Prueba de notificacion desde Windows Server${nl}Fecha: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     
     $uri = "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"
     $body = @{
@@ -198,30 +199,36 @@ if ($curlPath) {
     Write-Host "    [OK] curl.exe encontrado en: $curlPath" -ForegroundColor Green
     try {
         $curlVersion = & curl.exe --version 2>&1 | Select-Object -First 1
-        Write-Host "    Versión: $curlVersion" -ForegroundColor Green
+        Write-Host "    Version: $curlVersion" -ForegroundColor Green
     }
     catch {}
 } else {
-    Write-Host "    [WARN] curl.exe no encontrado (no crítico)" -ForegroundColor Yellow
+    Write-Host "    [WARN] curl.exe no encontrado - no es critico" -ForegroundColor Yellow
 }
 Write-Host ""
 
-# 9. Probar script completo de notificación
+# 9. Probar script completo de notificacion
 Write-Host "[9] Probando script completo Send-TelegramNotification.ps1..." -ForegroundColor Yellow
 
 try {
     $notificationScript = Join-Path $ScriptPath "Send-TelegramNotification.ps1"
     $testMsg = "[TEST] Mensaje de prueba completo desde $env:COMPUTERNAME"
     
-    Write-Host "    Ejecutando script..." -ForegroundColor Gray
-    & $notificationScript -Message $testMsg 2>&1 | ForEach-Object {
-        Write-Host "    $_" -ForegroundColor Gray
+    Write-Host "    Ejecutando script en modo silencioso..." -ForegroundColor Gray
+    $output = & $notificationScript -Message $testMsg -Silent 2>&1
+    
+    # Mostrar solo errores criticos
+    $errors = $output | Where-Object { $_ -match '\[ERROR\]' }
+    if ($errors) {
+        $errors | ForEach-Object {
+            Write-Host "    $_" -ForegroundColor Red
+        }
     }
     
     if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
-        Write-Host "    [OK] Script ejecutado correctamente" -ForegroundColor Green
+        Write-Host "    [OK] Script ejecutado correctamente - Mensaje enviado" -ForegroundColor Green
     } else {
-        Write-Host "    [ERROR] Script terminó con código: $LASTEXITCODE" -ForegroundColor Red
+        Write-Host "    [ERROR] Script termino con codigo: $LASTEXITCODE" -ForegroundColor Red
     }
 }
 catch {
@@ -229,8 +236,8 @@ catch {
 }
 Write-Host ""
 
-Write-Host "=== DIAGNÓSTICO COMPLETADO ===" -ForegroundColor Cyan
+Write-Host "=== DIAGNOSTICO COMPLETADO ===" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Si todos los tests pasaron correctamente, las notificaciones deberían funcionar." -ForegroundColor Green
-Write-Host "Si algún test falló, revisa el error específico y la configuración correspondiente." -ForegroundColor Yellow
+Write-Host "Si todos los tests pasaron correctamente, las notificaciones deberian funcionar." -ForegroundColor Green
+Write-Host "Si algun test fallo, revisa el error especifico y la configuracion correspondiente." -ForegroundColor Yellow
 Write-Host ""
